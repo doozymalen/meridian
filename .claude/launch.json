@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "meridian",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "meridian.server:app", "--host", "127.0.0.1", "--port", "8756"],
+      "port": 8756
+    }
+  ]
+}

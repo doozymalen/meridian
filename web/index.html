@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian — 파노라마 스티칭</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 7.5 12 4l9 3.5v9L12 20l-9-3.5v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M12 4v16" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2 2.4"/>
+    </svg>
+    <span>Meridian</span>
+  </div>
+
+  <div class="bar__group">
+    <button class="btn" id="btn-add" title="사진 추가 (A)">사진 추가</button>
+    <button class="btn" id="btn-add-folder" title="폴더 통째로 추가">폴더</button>
+  </div>
+
+  <div class="bar__sep"></div>
+
+  <div class="bar__group">
+    <button class="btn btn--accent" id="btn-align" title="특징점 검출 + 번들 조정 (⌘↵)">자동 정렬</button>
+    <button class="btn" id="btn-optimize" title="제어점 그대로 다시 최적화">최적화</button>
+    <button class="btn" id="btn-straighten" title="지평선 수평 맞추기">수평</button>
+  </div>
+
+  <div class="bar__spacer"></div>
+
+  <div class="status" id="status">
+    <span class="status__item" id="st-images">사진 0</span>
+    <span class="status__item" id="st-cp">제어점 0</span>
+    <span class="status__item" id="st-rms">—</span>
+    <span class="status__item" id="st-size">—</span>
+  </div>
+
+  <div class="bar__sep"></div>
+
+  <div class="bar__group">
+    <button class="btn" id="btn-save" title="프로젝트 저장 (⌘S)">저장</button>
+    <button class="btn" id="btn-open" title="프로젝트 열기 (⌘O)">열기</button>
+    <button class="btn btn--primary" id="btn-render" title="원본 해상도로 내보내기 (⌘⇧E)">내보내기</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- 좌: 필름스트립 -->
+  <aside class="rail" id="rail">
+    <div class="rail__head">
+      <span>사진</span>
+      <span class="chip" id="rail-count">0</span>
+    </div>
+    <div class="strip" id="strip"></div>
+    <div class="rail__hint" id="rail-hint">
+      사진을 끌어다 놓거나<br><b>사진 추가</b>를 누르세요
+    </div>
+  </aside>
+
+  <!-- 중: 작업 영역 -->
+  <section class="stage">
+    <nav class="tabs" role="tablist">
+      <button class="tab tab--on" data-view="preview" role="tab">미리보기</button>
+      <button class="tab" data-view="cp" role="tab">제어점</button>
+      <button class="tab" data-view="cplist" role="tab">제어점 목록</button>
+      <div class="tabs__spacer"></div>
+      <label class="toggle" id="seam-toggle-wrap" title="이음선이 어디로 지나는지 표시">
+        <input type="checkbox" id="chk-seams"><span>이음선 보기</span>
+      </label>
+      <button class="btn btn--ghost" id="btn-refresh" title="미리보기 다시 만들기 (R)">새로 고침</button>
+    </nav>
+
+    <!-- 미리보기 -->
+    <div class="view view--on" id="view-preview">
+      <div class="canvas-wrap" id="canvas-wrap">
+        <canvas id="pano"></canvas>
+        <div class="empty" id="preview-empty">
+          <div class="empty__art">
+            <svg width="54" height="54" viewBox="0 0 24 24" fill="none">
+              <rect x="2.5" y="6" width="19" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M2.5 14.5 8 10l4.5 3.5L16 11l5.5 4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              <circle cx="8.5" cy="9" r="1.2" fill="currentColor"/>
+            </svg>
+          </div>
+          <p>사진을 넣고 <b>자동 정렬</b>을 누르면<br>여기에 파노라마가 나타납니다</p>
+        </div>
+      </div>
+      <div class="viewbar">
+        <div class="viewbar__group">
+          <button class="mini" id="zoom-out" title="축소">−</button>
+          <span class="mini__label" id="zoom-label">맞춤</span>
+          <button class="mini" id="zoom-in" title="확대">+</button>
+          <button class="mini" id="zoom-fit" title="화면에 맞추기 (F)">맞춤</button>
+          <button class="mini" id="zoom-100" title="1:1">1:1</button>
+        </div>
+        <div class="viewbar__spacer"></div>
+        <div class="viewbar__info" id="view-info">—</div>
+      </div>
+    </div>
+
+    <!-- 제어점 편집 -->
+    <div class="view" id="view-cp">
+      <div class="cp-head">
+        <label>왼쪽
+          <select id="cp-a" class="sel"></select>
+        </label>
+        <button class="mini" id="cp-swap" title="좌우 바꾸기">⇄</button>
+        <label>오른쪽
+          <select id="cp-b" class="sel"></select>
+        </label>
+        <div class="cp-head__spacer"></div>
+        <span class="hint" id="cp-hint">왼쪽 이미지를 클릭하면 짝을 찾아 드립니다</span>
+        <select id="cp-kind" class="sel sel--sm" title="제어점 종류">
+          <option value="manual">보통</option>
+          <option value="vertical">수직선</option>
+          <option value="horizontal">수평선</option>
+        </select>
+        <button class="btn btn--ghost" id="cp-prune" title="잔차가 큰 제어점 끄기">나쁜 점 정리</button>
+      </div>
+      <div class="cp-panes">
+        <div class="cp-pane" data-side="a">
+          <canvas class="cp-canvas" id="cp-canvas-a"></canvas>
+          <div class="loupe" id="loupe-a"><canvas id="loupe-canvas-a"></canvas></div>
+        </div>
+        <div class="cp-pane" data-side="b">
+          <canvas class="cp-canvas" id="cp-canvas-b"></canvas>
+          <div class="loupe" id="loupe-b"><canvas id="loupe-canvas-b"></canvas></div>
+        </div>
+      </div>
+      <div class="cp-foot">
+        <span id="cp-count">—</span>
+        <div class="cp-foot__spacer"></div>
+        <span class="hint">클릭 = 점 추가 · ⌥클릭 = 위치 직접 지정 · 점 클릭 후 ⌫ = 삭제</span>
+      </div>
+    </div>
+
+    <!-- 제어점 목록 -->
+    <div class="view" id="view-cplist">
+      <div class="table-wrap">
+        <table class="table" id="cp-table">
+          <thead><tr>
+            <th>#</th><th>왼쪽</th><th>오른쪽</th><th>종류</th>
+            <th class="num">잔차(px)</th><th>사용</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 우: 속성 -->
+  <aside class="panel" id="panel">
+
+    <section class="grp">
+      <h3>투영</h3>
+      <div class="seg" id="seg-proj">
+        <button data-v="equirect" class="seg__b seg__b--on">구면</button>
+        <button data-v="cylindrical" class="seg__b">원통</button>
+        <button data-v="rectilinear" class="seg__b">직선</button>
+      </div>
+      <div class="seg seg--sub" id="seg-proj2">
+        <button data-v="mercator" class="seg__b">메르카토르</button>
+        <button data-v="stereographic" class="seg__b">스테레오</button>
+        <button data-v="fisheye" class="seg__b">어안</button>
+      </div>
+      <div class="seg seg--sub">
+        <button class="seg__b" id="btn-planet" title="바닥을 중심에 둔 작은 행성">리틀 플래닛</button>
+        <button class="seg__b" id="btn-tunnel" title="하늘을 중심에 둔 터널">터널</button>
+      </div>
+      <div class="field">
+        <label>중심 회전<span id="lbl-yaw">0°</span></label>
+        <input type="range" id="rng-yaw" min="-180" max="180" value="0" step="0.5">
+      </div>
+      <div class="field">
+        <label>중심 상하<span id="lbl-pitch">0°</span></label>
+        <input type="range" id="rng-pitch" min="-90" max="90" value="0" step="0.5">
+      </div>
+    </section>
+
+    <section class="grp">
+      <h3>합성</h3>
+      <div class="field">
+        <label>이음선</label>
+        <select id="sel-seam" class="sel">
+          <option value="dp_color_grad">거리 분할 + 동적계획</option>
+          <option value="graphcut">거리 분할 + 그래프컷</option>
+          <option value="distance">거리 분할만 (가장 넓은 면)</option>
+          <option value="none">쓰지 않음</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>블렌딩</label>
+        <select id="sel-blend" class="sel">
+          <option value="multiband">멀티밴드</option>
+          <option value="feather">페더</option>
+          <option value="none">쓰지 않음</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>노출 맞춤</label>
+        <select id="sel-exposure" class="sel">
+          <option value="auto">자동</option>
+          <option value="none">쓰지 않음</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="chk-wb" checked><span>화이트밸런스까지 맞추기</span></label>
+      <label class="check"><input type="checkbox" id="chk-vig" checked><span>비네팅 보정 (렌즈 주변부)</span></label>
+      <div class="field" style="margin-top:8px">
+        <label>밝기 기울기 맞춤<span id="lbl-lf">100%</span></label>
+        <input type="range" id="rng-lf" min="0" max="100" value="100" step="5"
+               title="이미지 안에서 완만하게 변하는 밝기 차이를 서로 맞춥니다. 하늘의 얼룩진 이음매에 가장 효과가 큽니다">
+      </div>
+      <div class="vig-note" id="vig-note"></div>
+    </section>
+
+    <section class="grp" id="grp-lens">
+      <h3>렌즈</h3>
+      <div id="lens-list"></div>
+    </section>
+
+    <section class="grp">
+      <h3>선택한 사진</h3>
+      <div id="sel-info" class="meta">선택된 사진이 없습니다</div>
+      <div class="field" id="fld-ev" hidden>
+        <label>노출 보정<span id="lbl-ev">0.00 EV</span></label>
+        <input type="range" id="rng-ev" min="-3" max="3" value="0" step="0.05">
+      </div>
+    </section>
+
+    <section class="grp">
+      <h3>출력</h3>
+      <div class="field">
+        <label>크기<span id="lbl-scale">100%</span></label>
+        <input type="range" id="rng-scale" min="5" max="400" value="100" step="5">
+      </div>
+      <div class="field">
+        <label>가로 픽셀<span id="lbl-native">원본 100%</span></label>
+        <div class="px-row">
+          <input type="number" id="num-width" class="num-in" min="64" step="1" placeholder="자동">
+          <span class="px-x">×</span>
+          <input type="number" id="num-height" class="num-in" min="64" step="1" placeholder="자동">
+          <button class="mini" id="btn-px-reset" title="원본 화소 밀도로 되돌리기">원본</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>형식</label>
+        <select id="sel-format" class="sel">
+          <option value="jpg">JPEG</option>
+          <option value="tif">TIFF (LZW)</option>
+          <option value="png">PNG (투명 포함)</option>
+        </select>
+      </div>
+      <div class="field" id="fld-quality">
+        <label>품질<span id="lbl-quality">94</span></label>
+        <input type="range" id="rng-quality" min="60" max="100" value="94" step="1">
+      </div>
+      <div class="out-size" id="out-size">—</div>
+    </section>
+
+  </aside>
+</main>
+
+<!-- 진행률 -->
+<div class="scrim" id="scrim" hidden>
+  <div class="prog">
+    <div class="prog__title" id="prog-title">작업 중</div>
+    <div class="prog__msg" id="prog-msg">…</div>
+    <div class="prog__track"><div class="prog__fill" id="prog-fill"></div></div>
+    <div class="prog__pct" id="prog-pct">0%</div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<div class="drop" id="drop" hidden><div class="drop__box">여기에 놓으세요</div></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

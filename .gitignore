@@ -1,0 +1,21 @@
+# 빌드 결과와 가상환경 — 다시 만들면 되는 것들
+.venv/
+.venv-win/
+dist/
+build/
+*.spec
+__pycache__/
+*.pyc
+
+# 캐시 (사진 축소본, 기가픽셀 임시 캔버스)
+cache/
+.cache/
+
+# 사용자 작업물 — 사진 경로와 촬영 정보가 들어 있다
+projects/
+*.meridian
+
+# 잡동사니
+.DS_Store
+bench_*.py
+test_match.py

@@ -1,0 +1,19 @@
+[project]
+name = "meridian"
+version = "0.1.0"
+description = "파노라마 이미지 스티칭 스튜디오"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "opencv-contrib-python-headless>=4.10",
+    "rawpy>=0.22",
+    "pillow>=10.3",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "exifread>=3.5.1",
+]
+
+[tool.uv]
+package = false

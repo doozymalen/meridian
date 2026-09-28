@@ -1,0 +1,46 @@
+name: 윈도우 앱 빌드
+
+# 파이썬 실행 파일은 교차 빌드가 안 된다. 맥에서도, 리눅스 클라우드에서도
+# .exe 를 만들 수 없다. 그래서 깃허브가 빌려주는 윈도우 머신에서 빌드한다.
+on:
+  push:
+    tags: ["v*"]          # v1.0 같은 태그를 올리면 릴리스까지 만든다
+  workflow_dispatch: {}   # 깃허브 화면에서 손으로도 돌릴 수 있다
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 빌드
+        shell: pwsh
+        run: .\windows\build_windows.ps1
+
+      - name: 결과 확인
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\Meridian\Meridian.exe")) { throw "exe 가 만들어지지 않았습니다" }
+          Get-ChildItem -Recurse dist\Meridian | Measure-Object Length -Sum |
+            ForEach-Object { "크기: {0:N0} MB" -f ($_.Sum / 1MB) }
+
+      - name: 내려받을 수 있게 올리기
+        uses: actions/upload-artifact@v4
+        with:
+          name: Meridian-windows
+          path: dist/Meridian/
+          retention-days: 14
+
+      - name: 태그를 올렸으면 릴리스에도 붙인다
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Compress-Archive -Path dist\Meridian\* -DestinationPath Meridian-windows.zip
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: Meridian-windows.zip
