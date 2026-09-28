@@ -17,8 +17,10 @@ Write-Host "     python $ver"
 
 Write-Host "2/4  가상환경과 의존성 (몇 분 걸립니다)"
 if (-not (Test-Path ".venv-win")) { & python -m venv .venv-win }
+$py = ".\.venv-win\Scripts\python.exe"
 $pip = ".\.venv-win\Scripts\pip.exe"
-& $pip install --upgrade pip --quiet
+# pip 자신을 pip.exe 로 갈아끼우면 윈도우가 실행 중인 파일을 못 바꾼다고 막는다
+& $py -m pip install --upgrade pip --quiet
 & $pip install --quiet `
     numpy scipy "opencv-contrib-python-headless>=4.10" rawpy pillow `
     fastapi "uvicorn[standard]" python-multipart exifread pyinstaller
@@ -29,6 +31,7 @@ $sep = ";"
     --name Meridian `
     --windowed `
     --icon "icon\meridian.ico" `
+    --paths "." `
     --add-data "meridian$($sep)meridian" `
     --add-data "web$($sep)web" `
     --hidden-import "uvicorn.logging" `
@@ -37,12 +40,19 @@ $sep = ";"
     --hidden-import "uvicorn.protocols.websockets.auto" `
     --hidden-import "uvicorn.lifespan.on" `
     --collect-submodules "meridian" `
+    --collect-all "cv2" `
+    --collect-all "rawpy" `
     "windows\launcher.py"
 
 Write-Host "4/4  마무리"
 $exe = "dist\Meridian\Meridian.exe"
 if (Test-Path $exe) {
     $size = [math]::Round((Get-ChildItem -Recurse "dist\Meridian" | Measure-Object Length -Sum).Sum / 1MB)
+    # OpenCV·SciPy·NumPy 까지 담기면 200MB 는 넘는다. 그보다 작으면 분석이
+    # 라이브러리를 놓친 것이다 — exe 는 만들어지지만 실행하면 곧바로 죽는다.
+    if ($size -lt 150) {
+        throw "결과물이 ${size}MB 로 너무 작습니다. 라이브러리가 빠졌습니다."
+    }
     Write-Host ""
     Write-Host "완료: $exe  (약 ${size}MB)"
     Write-Host "폴더째 옮기면 파이썬이 없는 PC 에서도 그대로 실행됩니다."
