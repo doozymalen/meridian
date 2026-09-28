@@ -29,17 +29,33 @@ jobs:
           Get-ChildItem -Recurse dist\Meridian | Measure-Object Length -Sum |
             ForEach-Object { "크기: {0:N0} MB" -f ($_.Sum / 1MB) }
 
+      - name: 네이티브 화면 빌드 (WinUI 3)
+        shell: pwsh
+        run: |
+          dotnet publish winui\Meridian.WinUI.csproj -c Release -r win-x64 `
+            -p:Platform=x64 -o publish
+          if (-not (Test-Path "publish\Meridian.exe")) { throw "화면 exe 가 만들어지지 않았습니다" }
+
+      - name: 엔진을 화면 폴더 안으로
+        shell: pwsh
+        run: |
+          # 화면은 같은 폴더의 engine\Meridian.exe 를 자식 프로세스로 띄운다
+          New-Item -ItemType Directory -Force -Path publish\engine | Out-Null
+          Copy-Item -Recurse -Force dist\Meridian\* publish\engine\
+          $size = [math]::Round((Get-ChildItem -Recurse publish | Measure-Object Length -Sum).Sum / 1MB)
+          Write-Host "합친 크기: ${size}MB"
+
       - name: 내려받을 수 있게 올리기
         uses: actions/upload-artifact@v4
         with:
           name: Meridian-windows
-          path: dist/Meridian/
+          path: publish/
           retention-days: 14
 
       - name: 태그를 올렸으면 릴리스에도 붙인다
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: Compress-Archive -Path dist\Meridian\* -DestinationPath Meridian-windows.zip
+        run: Compress-Archive -Path publish\* -DestinationPath Meridian-windows.zip
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:

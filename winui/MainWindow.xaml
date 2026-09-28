@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Meridian.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    xmlns:local="using:Meridian"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 도구 모음 -->
+        <Grid Grid.Row="0" Padding="12,8" ColumnSpacing="8"
+              BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="AddBtn" Click="AddPhotos_Click" ToolTipService.ToolTip="사진 추가 (Ctrl+O)">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE710;" FontSize="14" />
+                        <TextBlock Text="사진 추가" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="AlignBtn" Click="Align_Click" ToolTipService.ToolTip="특징점을 찾아 카메라와 렌즈를 한꺼번에 풉니다 (Ctrl+R)">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE945;" FontSize="14" />
+                        <TextBlock Text="자동 정렬" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="OptimizeBtn" Click="Optimize_Click" Content="최적화"
+                        ToolTipService.ToolTip="지금 제어점으로 다시 맞춥니다" />
+                <Button x:Name="StraightenBtn" Click="Straighten_Click" Content="수평"
+                        ToolTipService.ToolTip="지평선을 수평으로 맞춥니다" />
+                <Button x:Name="RefreshBtn" Click="RefreshPreview_Click"
+                        ToolTipService.ToolTip="바꾼 설정을 미리보기에 반영합니다 (Ctrl+Y)">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <TextBlock x:Name="RefreshLabel" Text="미리보기 갱신" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0">
+                <TextBlock x:Name="TitleText" Text="Meridian" FontWeight="SemiBold" />
+                <TextBlock x:Name="StatusText" Text="" FontSize="12" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                <Button Click="ZoomOut_Click" Content="−" Width="36" />
+                <Button Click="ZoomFit_Click" Content="맞춤" />
+                <Button Click="ZoomIn_Click" Content="+" Width="36" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 본문: 사진 목록 · 미리보기 · 속성 -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="320" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 사진 목록 -->
+            <ListView x:Name="PhotoList" Grid.Column="0" SelectionMode="Single"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}"
+                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:PhotoItem">
+                        <Grid ColumnSpacing="10" Padding="0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="56" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" CornerRadius="4" Background="{ThemeResource ControlAltFillColorSecondaryBrush}">
+                                <Image Source="{x:Bind Thumb}" Width="56" Height="42" Stretch="UniformToFill" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{x:Bind Detail}" FontSize="11" Opacity="0.6" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- 미리보기 -->
+            <Grid Grid.Column="1" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+                <ScrollViewer x:Name="PreviewScroll" ZoomMode="Enabled" MinZoomFactor="0.05" MaxZoomFactor="12"
+                              HorizontalScrollMode="Auto" VerticalScrollMode="Auto"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <Image x:Name="PreviewImage" Stretch="None"
+                           PointerPressed="Preview_PointerPressed"
+                           PointerMoved="Preview_PointerMoved"
+                           PointerReleased="Preview_PointerReleased" />
+                </ScrollViewer>
+
+                <!-- 사진이 없을 때 -->
+                <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <FontIcon Glyph="&#xEB9F;" FontSize="40" Opacity="0.3" />
+                    <TextBlock Text="사진을 끌어다 놓으세요" HorizontalAlignment="Center" Opacity="0.7" />
+                    <TextBlock Text="폴더째 놓아도 되고, 위의 + 로 골라도 됩니다"
+                               HorizontalAlignment="Center" FontSize="12" Opacity="0.45" />
+                </StackPanel>
+
+                <!-- 정렬 전 -->
+                <StackPanel x:Name="AlignPanel" Visibility="Collapsed"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <TextBlock x:Name="AlignTitle" Text="" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock Text="겹치는 부분을 찾아 카메라 자세와 렌즈를 한꺼번에 풉니다"
+                               Opacity="0.65" HorizontalAlignment="Center" />
+                    <Button Content="자동 정렬" Click="Align_Click" HorizontalAlignment="Center"
+                            Style="{ThemeResource AccentButtonStyle}" MinWidth="180" />
+                </StackPanel>
+
+                <!-- 그리는 중 -->
+                <StackPanel x:Name="RenderPanel" Visibility="Collapsed"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MinWidth="260">
+                    <TextBlock Text="미리보기 만드는 중" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <ProgressBar x:Name="RenderBar" Minimum="0" Maximum="1" Width="240" />
+                    <TextBlock x:Name="RenderMsg" Text="" Opacity="0.65" HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <TextBlock x:Name="PreviewStatus" Text="" FontSize="11" Opacity="0.5"
+                           HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12" />
+            </Grid>
+
+            <!-- 속성 -->
+            <ScrollViewer Grid.Column="2" Padding="16,12,16,20"
+                          Background="{ThemeResource LayerFillColorDefaultBrush}"
+                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0">
+                <StackPanel Spacing="14">
+
+                    <TextBlock Text="투영" FontWeight="SemiBold" Opacity="0.8" />
+                    <ComboBox x:Name="ProjectionCombo" HorizontalAlignment="Stretch" SelectionChanged="Projection_Changed" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="리틀 플래닛" Click="Planet_Click" />
+                        <Button Content="터널" Click="Tunnel_Click" />
+                    </StackPanel>
+
+                    <TextBlock Text="파노라마 방향" FontWeight="SemiBold" Opacity="0.8" />
+                    <Grid ColumnSpacing="8" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="76" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition /><RowDefinition /><RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="좌우" VerticalAlignment="Center" FontSize="12" />
+                        <Slider x:Name="YawSlider" Grid.Row="0" Grid.Column="1" Minimum="-180" Maximum="180"
+                                StepFrequency="0.5" ValueChanged="Orient_SliderChanged" />
+                        <controls:NumberBox x:Name="YawBox" Grid.Row="0" Grid.Column="2" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Orient_BoxChanged" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="상하" VerticalAlignment="Center" FontSize="12" />
+                        <Slider x:Name="PitchSlider" Grid.Row="1" Grid.Column="1" Minimum="-90" Maximum="90"
+                                StepFrequency="0.5" ValueChanged="Orient_SliderChanged" />
+                        <controls:NumberBox x:Name="PitchBox" Grid.Row="1" Grid.Column="2" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Orient_BoxChanged" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="기울기" VerticalAlignment="Center" FontSize="12" />
+                        <Slider x:Name="RollSlider" Grid.Row="2" Grid.Column="1" Minimum="-180" Maximum="180"
+                                StepFrequency="0.5" ValueChanged="Orient_SliderChanged" />
+                        <controls:NumberBox x:Name="RollBox" Grid.Row="2" Grid.Column="2" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Orient_BoxChanged" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="적용" Click="ApplyOrient_Click" />
+                        <Button Content="되돌리기" Click="ResetOrient_Click" />
+                    </StackPanel>
+
+                    <TextBlock Text="화각" FontWeight="SemiBold" Opacity="0.8" />
+                    <Grid ColumnSpacing="8" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="76" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="가로" VerticalAlignment="Center" FontSize="12" />
+                        <Slider x:Name="HfovSlider" Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="360"
+                                StepFrequency="0.5" ValueChanged="Fov_SliderChanged" />
+                        <controls:NumberBox x:Name="HfovBox" Grid.Row="0" Grid.Column="2" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Fov_BoxChanged" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="세로" VerticalAlignment="Center" FontSize="12" />
+                        <Slider x:Name="VfovSlider" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="360"
+                                StepFrequency="0.5" ValueChanged="Fov_SliderChanged" />
+                        <controls:NumberBox x:Name="VfovBox" Grid.Row="1" Grid.Column="2" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Fov_BoxChanged" />
+                    </Grid>
+                    <Button Content="맞춤" Click="FitFov_Click"
+                            ToolTipService.ToolTip="사진이 전부 들어가는 가장 작은 화각으로 맞춥니다" />
+
+                    <TextBlock Text="합성" FontWeight="SemiBold" Opacity="0.8" />
+                    <ComboBox x:Name="SeamCombo" Header="이음선" HorizontalAlignment="Stretch" SelectionChanged="Seam_Changed" />
+                    <ComboBox x:Name="BlendCombo" Header="블렌딩" HorizontalAlignment="Stretch" SelectionChanged="Blend_Changed" />
+                    <ComboBox x:Name="ExposureCombo" Header="노출" HorizontalAlignment="Stretch" SelectionChanged="Exposure_Changed" />
+                    <CheckBox x:Name="WbCheck" Content="화이트밸런스까지 맞추기" Click="Wb_Click" />
+                    <CheckBox x:Name="VigCheck" Content="비네팅 보정" Click="Vig_Click" />
+                    <CheckBox x:Name="NadirCheck" Content="천정/삼각대 자국 자동 복구" Click="Nadir_Click" />
+                    <CheckBox x:Name="FillGapsCheck" Content="빈 곳 채우기" Click="FillGaps_Click"
+                              ToolTipService.ToolTip="사진이 없는 곳을 주변 색으로 메웁니다. 실제로 찍힌 내용이 아니므로, 어디를 못 찍었는지 보려면 끄세요." />
+
+                    <TextBlock Text="렌즈" FontWeight="SemiBold" Opacity="0.8" />
+                    <TextBlock x:Name="LensText" Text="사진을 추가하면 렌즈를 읽습니다" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+
+                    <TextBlock Text="출력" FontWeight="SemiBold" Opacity="0.8" />
+                    <Grid ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <controls:NumberBox x:Name="WidthBox" Grid.Column="0" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Width_Changed" />
+                        <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Center" Opacity="0.5" />
+                        <controls:NumberBox x:Name="HeightBox" Grid.Column="2" SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="Height_Changed" />
+                        <Button Grid.Column="3" Content="원본" Click="NativeSize_Click" />
+                    </Grid>
+                    <ComboBox x:Name="FormatCombo" Header="형식" HorizontalAlignment="Stretch" SelectionChanged="Format_Changed" />
+                    <Slider x:Name="QualitySlider" Header="품질" Minimum="1" Maximum="100"
+                            ValueChanged="Quality_Changed" />
+                    <TextBlock x:Name="SizeSummary" Text="정렬 후 계산됩니다" FontSize="11" Opacity="0.6" />
+                    <Button x:Name="ExportBtn" Content="내보내기…" Click="Export_Click"
+                            Style="{ThemeResource AccentButtonStyle}" HorizontalAlignment="Stretch" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>

@@ -71,6 +71,19 @@ def open_ui(url: str) -> subprocess.Popen | None:
 
 
 def main() -> None:
+    # 네이티브 화면(WinUI)이 띄울 때는 브라우저를 열지 않는다. 화면이 포트를
+    # 정해 주고, 자기 프로세스 번호를 넘겨 자신이 죽으면 엔진도 같이 끝나게 한다.
+    if os.environ.get("MERIDIAN_ENGINE_ONLY") == "1":
+        root = resource_root()
+        os.chdir(root)
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        import uvicorn
+        port = int(os.environ.get("MERIDIAN_PORT") or free_port())
+        uvicorn.run("meridian.server:app", host="127.0.0.1", port=port,
+                    log_level="warning")
+        return
+
     root = resource_root()
     os.chdir(root)
     if str(root) not in sys.path:
