@@ -7,6 +7,11 @@ on:
     tags: ["v*"]          # v1.0 같은 태그를 올리면 릴리스까지 만든다
   workflow_dispatch: {}   # 깃허브 화면에서 손으로도 돌릴 수 있다
 
+# 태그를 올렸을 때 릴리스를 만들고 zip 을 붙이려면 쓰기 권한이 있어야 한다.
+# 저장소 기본값(읽기 전용)으로는 마지막 단계가 403 으로 막힌다.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
