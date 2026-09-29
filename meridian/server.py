@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import features, live, optimize as opt, photometric, render
+from . import features, live, optimize as opt, photometric, render, sysmem
 from .camera import ImageParams, Lens, pixels_to_rays, rays_to_pixels, rotation_matrix, lens_inverse_lut
 from .features import ControlPoint
 from .images import SUPPORTED_EXT, build_proxy, build_thumb, cache_key, imwrite
@@ -36,16 +36,6 @@ from .warp import clamp_fov, compute_layout
 
 IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform == "win32"
-
-# 윈도우의 스레드 스택은 1MB 로, 리눅스(8MB)보다 훨씬 작다. 끌기용 원판(구 전체)의
-# 이음선 찾기처럼 OpenCV 가 스택을 깊게 쓰는 일을 작업 스레드에서 돌리면 스택이 넘쳐
-# 엔진이 아무 기록도 없이 꺼졌다 (윈도우에서만, '연결 거부' 로 보였다). 앞으로 만들
-# 모든 스레드(작업, 스레드 풀, 서버의 요청 처리)에 넉넉히 준다. 예약만 하고 실제로
-# 쓰는 만큼만 메모리를 잡으므로 부담은 없다.
-try:
-    threading.stack_size(64 * 1024 * 1024)
-except (ValueError, RuntimeError):
-    pass
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -125,7 +115,7 @@ def run_job(fn, label: str, cancellable: bool = False) -> str:
             JOBS[jid].update(done=True, error=f"{type(e).__name__}: {e}", stage="error",
                              message="실패")
 
-    threading.Thread(target=worker, daemon=True).start()
+    sysmem.start_heavy_thread(worker)
     return jid
 
 

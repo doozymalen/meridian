@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
 
 def available_mb() -> int | None:
@@ -79,3 +80,27 @@ def budget_mb(want: int, share: float = 0.4) -> int:
     if avail is None:
         return want
     return max(256, min(want, int(avail * share)))
+
+
+# 윈도우의 스레드 스택은 기본 1MB 다 (리눅스는 8MB). 구 전체 원판의 이음선 찾기처럼
+# OpenCV 가 스택을 깊게 쓰는 무거운 작업은 넉넉한 스택이 있는 스레드에서 돌린다.
+# 모든 스레드에 주면 안 된다 — 윈도우는 스택을 실제 메모리로 잡아 두므로, 서버가
+# 띄우는 수십 개 스레드에 64MB 씩 줬더니 자원이 바닥나 엔진이 멈췄다.
+HEAVY_STACK = 8 * 1024 * 1024
+_stack_lock = threading.Lock()
+
+
+def start_heavy_thread(target) -> threading.Thread:
+    """무거운 작업용 스레드를 넉넉한 스택으로 띄운다. 다른 스레드의 스택은 그대로다."""
+    with _stack_lock:
+        try:
+            old = threading.stack_size(HEAVY_STACK)
+        except (ValueError, RuntimeError):
+            old = None
+        try:
+            t = threading.Thread(target=target, daemon=True)
+            t.start()
+        finally:
+            if old is not None:
+                threading.stack_size(old)
+    return t
