@@ -15,7 +15,7 @@ engine\Meridian.exe 엔진 (PyInstaller 로 묶은 파이썬)
 
 ## 빌드
 
-[`.github/workflows/windows.yml`](../.github/workflows/windows.yml) 이 깃허브의 윈도우
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) 이 깃허브의 윈도우
 러너에서 전부 만든다. 손으로 할 때는 PowerShell 에서:
 
 ```powershell
