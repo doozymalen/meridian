@@ -31,6 +31,10 @@ Copy-Item -Recurse -Force dist\Meridian\* publish\engine\
 - 화면은 `dotnet publish` 로는 안 된다. dotnet SDK 의 MSBuild 에는 WinUI 가 쓰는
   리소스 패키징 작업(`ExpandPriContent`)이 없다. 비주얼 스튜디오(또는 Build Tools)의
   MSBuild 를 쓴다. .NET SDK 는 **8.x** 로 `global.json` 에 못박아 두었다
+- 설치 프로그램은 Inno Setup 6 으로 만든다 ([`windows/meridian.iss`](../windows/meridian.iss)).
+  위 `publish` 폴더를 그대로 담는다: `iscc /DAppVersion=1.0.0 /DSourceDir=$PWD\publish windows\meridian.iss`
+  → `dist\Meridian-Setup.exe`. 관리자 권한 없이 `%LOCALAPPDATA%\Programs\Meridian` 에 설치된다.
+  `AppId` 는 바꾸면 안 된다 — 새 버전이 옛 버전을 덮어 설치하는 기준이다
 - 엔진 빌드 결과가 150MB 보다 작으면 스크립트가 실패로 처리한다. PyInstaller 가
   라이브러리를 놓쳐도 exe 는 만들어지는데, 실행하면 곧바로 죽기 때문이다
 

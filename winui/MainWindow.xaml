@@ -111,7 +111,7 @@
 
             <!-- 미리보기 -->
             <Grid x:Name="PreviewPane" Grid.Column="1" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
-                <ScrollViewer x:Name="PreviewScroll" ZoomMode="Enabled" MinZoomFactor="0.05" MaxZoomFactor="12"
+                <ScrollViewer x:Name="PreviewScroll" ZoomMode="Enabled" MinZoomFactor="0.1" MaxZoomFactor="12"
                               HorizontalScrollMode="Auto" VerticalScrollMode="Auto"
                               HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                     <Image x:Name="PreviewImage" Stretch="None"

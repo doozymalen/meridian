@@ -52,6 +52,14 @@ jobs:
             /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
             /p:SelfContained=true /p:PublishDir=$PWD\publish\ /v:minimal
           if (-not (Test-Path "publish\Meridian.exe")) { throw "화면 exe 가 만들어지지 않았습니다" }
+          # 컴파일된 XAML 이 든 리소스 파일. 빠져도 빌드는 '성공' 하지만, exe 를 누르면
+          # 창이 뜨기도 전에 아무 말 없이 꺼진다 (v1.0.0 첫 배포에서 실제로 그랬다).
+          if (-not (Test-Path "publish\resources.pri")) {
+            Write-Host "--- 빌드가 만든 리소스 파일들"
+            Get-ChildItem -Recurse winui\bin, winui\obj, publish -Include *.pri, *.xbf -ErrorAction SilentlyContinue |
+              ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName }
+            throw "resources.pri 가 없습니다 — 실행하면 곧바로 꺼집니다"
+          }
 
       - name: 엔진을 화면 폴더 안으로
         shell: pwsh
@@ -62,11 +70,50 @@ jobs:
           $size = [math]::Round((Get-ChildItem -Recurse publish | Measure-Object Length -Sum).Sum / 1MB)
           Write-Host "합친 크기: ${size}MB"
 
+      - name: 실제로 켜지는지 확인
+        shell: pwsh
+        run: |
+          # 빌드가 '성공' 해도 실행하면 곧바로 꺼지는 경우가 있었다. 직접 띄워 본다.
+          # 20초 동안 살아 있으면 통과. 죽으면 App 이 남긴 crash.log 를 보여 준다.
+          $p = Start-Process -FilePath "publish\Meridian.exe" -PassThru
+          Start-Sleep -Seconds 20
+          $log = Join-Path $env:LOCALAPPDATA "Meridian\crash.log"
+          if ($p.HasExited) {
+            if (Test-Path $log) { Get-Content $log }
+            throw "Meridian.exe 가 켜지자마자 꺼졌습니다 (종료 코드 $($p.ExitCode))"
+          }
+          if (Test-Path $log) { Get-Content $log; throw "실행 중 오류가 기록됐습니다" }
+          # 화면은 엔진(engine\Meridian.exe)을 자식으로 띄운다. 엔진이 못 뜨면 화면은
+          # 살아 있어도 오류 창만 보인다. 이름이 같으니 경로로 가린다.
+          $engine = Get-Process Meridian -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -like "*\engine\Meridian.exe" }
+          if (-not $engine) {
+            taskkill /PID $p.Id /T /F | Out-Null
+            throw "화면은 켜졌지만 엔진이 떠 있지 않습니다"
+          }
+          Write-Host "20초 동안 정상 실행됨 (화면 PID $($p.Id), 엔진 PID $($engine[0].Id))"
+          # 화면과 그 아래 엔진까지 함께 끈다
+          taskkill /PID $p.Id /T /F | Out-Null
+
+      - name: 설치 프로그램 만들기 (Inno Setup)
+        shell: pwsh
+        run: |
+          # 태그(v1.2.3)면 그 번호를, 아니면 0.0.0 을 설치 프로그램 버전으로 쓴다
+          $ver = if ("${{ github.ref }}" -like "refs/tags/v*") { "${{ github.ref_name }}".TrimStart("v") } else { "0.0.0" }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress | Out-Null
+          }
+          & $iscc /Q "/DAppVersion=$ver" "/DSourceDir=$PWD\publish" windows\meridian.iss
+          if ($LASTEXITCODE -ne 0) { throw "설치 프로그램을 만들지 못했습니다" }
+          if (-not (Test-Path "dist\Meridian-Setup.exe")) { throw "Meridian-Setup.exe 가 없습니다" }
+          "설치 프로그램: {0:N0} MB (버전 $ver)" -f ((Get-Item dist\Meridian-Setup.exe).Length / 1MB)
+
       - name: 내려받을 수 있게 올리기
         uses: actions/upload-artifact@v4
         with:
           name: Meridian-windows
-          path: publish/
+          path: dist/Meridian-Setup.exe
           retention-days: 14
 
   mac:
@@ -107,16 +154,16 @@ jobs:
         with:
           path: artifacts
 
-      - name: 윈도우 판 압축
+      - name: 올릴 파일 모으기
         run: |
-          cd artifacts/Meridian-windows && zip -qr ../../Meridian-windows.zip . && cd ../..
+          cp artifacts/Meridian-windows/Meridian-Setup.exe .
           cp artifacts/Meridian-mac/Meridian-mac.dmg .
-          ls -lh Meridian-windows.zip Meridian-mac.dmg
+          ls -lh Meridian-Setup.exe Meridian-mac.dmg
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            Meridian-windows.zip
+            Meridian-Setup.exe
             Meridian-mac.dmg
           # 깃허브 화면에서 릴리스를 만들며 설명을 적었으면 그 아래에 덧붙인다 (덮어쓰지 않는다)
           append_body: true
@@ -124,10 +171,10 @@ jobs:
 
             ---
             ## 내려받기
-            - **Windows** (10 1809 이상, x64): `Meridian-windows.zip` — 압축을 풀고 `Meridian.exe` 실행
+            - **Windows** (10 1809 이상, x64): `Meridian-Setup.exe` — 실행해서 설치하면 시작 메뉴와 바탕화면에 Meridian 이 생깁니다
             - **macOS** (Apple Silicon, 11 이상): `Meridian-mac.dmg` — 열고 `Meridian` 을 옆의 응용 프로그램 폴더로 끌어다 놓기
 
             ## 처음 실행할 때
             서명이 없어서 한 번 막힙니다.
-            - **Windows**: "Windows의 PC 보호" 창에서 **추가 정보 → 실행**
+            - **Windows**: 설치 파일을 열 때 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**
             - **macOS**: 열리지 않는다고 나오면 **시스템 설정 → 개인정보 보호 및 보안** 맨 아래의 **그래도 열기**

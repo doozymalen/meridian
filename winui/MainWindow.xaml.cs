@@ -68,6 +68,10 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        // XAML 이 슬라이더 범위를 정하는 순간(예: 화각 최솟값 1)에도 값이 바뀌었다는
+        // 알림이 온다. 그때는 아직 옆 칸들이 만들어지기 전이라, 받아서 처리하면 창을
+        // 만들다 죽는다. 다 만들 때까지는 사용자의 조작이 아니므로 무시한다.
+        _suppress = true;
         InitializeComponent();
         Title = "Meridian";
         PhotoList.ItemsSource = _photos;
@@ -77,6 +81,7 @@ public sealed partial class MainWindow : Window
         BlendCombo.ItemsSource = new[] { "멀티밴드", "페더", "쓰지 않음" };
         ExposureCombo.ItemsSource = new[] { "자동", "쓰지 않음" };
         FormatCombo.ItemsSource = new[] { "JPEG", "TIFF", "PNG" };
+        _suppress = false;
 
         Editor.Engine = _engine;
         Editor.Changed += async () => { try { await RefreshAsync(); } catch { } };
