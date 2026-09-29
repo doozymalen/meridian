@@ -23,7 +23,7 @@ from dataclasses import asdict, is_dataclass
 import cv2
 import numpy as np
 
-from . import render
+from . import render, sysmem
 from .camera import pano_grid_to_rays, rays_to_pano
 from .warp import PanoLayout, clamp_fov, compute_layout
 
@@ -101,7 +101,7 @@ def prepare(p, cache_dir) -> dict:
                 if _building["key"] == key:
                     _building["key"] = None
 
-    threading.Thread(target=work, daemon=True).start()
+    sysmem.start_heavy_thread(work)
     return {"ready": False, "building": True}
 
 
