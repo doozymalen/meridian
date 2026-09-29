@@ -179,19 +179,6 @@ open dist/Meridian.app
 ([`.github/workflows/build.yml`](.github/workflows/build.yml)). PR 마다 돌고,
 `Actions → 앱 빌드 → Run workflow` 로 직접 돌릴 수도 있다.
 
-### 릴리스
-
-`v*` 태그를 올리면 두 판을 빌드해 릴리스를 만들고 `Meridian-Setup.exe`,
-`Meridian-mac.dmg` 를 붙인다. 태그 번호가 설치 프로그램의 버전이 된다. 둘 중 하나라도 실패하면 릴리스는 만들지 않는다.
-
-```bash
-git checkout main && git pull
-git tag v1.0.0 && git push origin v1.0.0
-```
-
-깃허브 화면에서 `Releases → Draft a new release` 로 새 태그를 만들어도 된다.
-앱 안의 버전 번호는 `build_app.sh` 의 Info.plist 에 있다.
-
 윈도우 PC 가 있다면 PowerShell 에서 직접 해도 된다.
 
 ```powershell
@@ -204,6 +191,21 @@ Copy-Item -Recurse dist\Meridian\* publish\engine\  # 화면이 엔진을 자식
 ```
 
 자세한 것은 [docs/windows.md](docs/windows.md).
+
+### 릴리스
+
+깃허브 화면에서 버튼 하나로 한다.
+
+1. [Actions → 앱 빌드](https://github.com/doozymalen/meridian/actions/workflows/build.yml) → **Run workflow**
+2. **릴리스할 버전**에 `1.0.2` 처럼 적는다 (앞에 `v` 는 붙이지 않는다). 설명도 적을 수 있다
+3. **Run workflow** 를 누른다
+
+두 판을 빌드하고, 윈도우판은 실제로 켜서 엔진이 답하는지까지 본 다음, 모두 통과하면
+태그 `v1.0.2` 와 릴리스를 만들어 `Meridian-Setup.exe`, `Meridian-mac.dmg` 를 붙인다.
+하나라도 실패하면 릴리스는 만들지 않는다. 버전 번호가 설치 프로그램의 버전이 된다.
+
+`v*` 태그를 직접 올리거나 `Releases → Draft a new release` 로 새 태그를 만들어도 같다.
+앱 안의 버전 번호는 `build_app.sh` 의 Info.plist 에 있다.
 
 ## 개발
 
