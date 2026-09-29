@@ -8,6 +8,11 @@
 from __future__ import annotations
 
 import os
+
+# numpy 를 불러오기 전에 정해야 한다 (자세한 이유는 meridian/__init__.py)
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 import socket
 import subprocess
 import sys
