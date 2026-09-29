@@ -36,6 +36,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import sysmem
+
 
 @dataclass
 class ControlPoint:
@@ -185,11 +187,20 @@ def _remove_self_ambiguous(pts: np.ndarray, desc: np.ndarray,
 
 def candidate_pairs(sets: list[FeatureSet], neighbors: int = 12,
                     min_votes: int = 8,
-                    max_pairs_per_image: int = 10) -> dict[tuple[int, int], list[tuple[int, int]]]:
+                    max_pairs_per_image: int = 10,
+                    progress=None,
+                    chunk: int = 8192) -> dict[tuple[int, int], list[tuple[int, int]]]:
     """전역 인덱스로 겹칠 법한 쌍과 그 잠정 매칭을 찾는다.
 
     상호 최근접만 받아들인다. A의 특징점 a 가 B의 b 를 최근접으로 가리키고, B의 b 도 A의 a 를
     최근접으로 가리킬 때만 유효 매칭으로 인정한다.
+
+    특징점마다 이웃을 150개까지 보므로 29장이면 이웃 목록이 수천만 개가 된다. 예전에는
+    이를 파이썬 목록으로 들고 있어 메모리를 7GB 까지 쓰고(4GB 윈도우 PC 에서 엔진이
+    죽었다) 몇 분씩 걸렸다. 이제 질의를 덩어리로 나눠 배열 연산으로 처리하고, 덩어리마다
+    '특징점 × 상대 이미지' 별 최근접·차근접만 남긴다. 결과는 예전과 같다.
+
+    progress(frac, message) 를 주면 덩어리마다 진행률을 알린다.
 
     반환: {(a, b): [(a 쪽 특징점 인덱스, b 쪽 인덱스), ...]}  (a < b)
     """
@@ -197,70 +208,87 @@ def candidate_pairs(sets: list[FeatureSet], neighbors: int = 12,
     if len(usable) < 2:
         return {}
 
-    all_desc = np.vstack([s.descriptors for s in usable])
+    all_desc = np.ascontiguousarray(np.vstack([s.descriptors for s in usable]), np.float32)
     owner = np.concatenate([np.full(len(s.descriptors), i, np.int32) for i, s in enumerate(usable)])
     local = np.concatenate([np.arange(len(s.descriptors), dtype=np.int32) for s in usable])
-
     n = len(all_desc)
-    
+    n_img = len(usable)
+
     # 겹치는 이미지들(bamboo 같이 반복 패턴)을 찾기 위해 검색 개수(k)를 넉넉하게 잡는다.
     # 원래 neighbors * 3 + 1 이었으나 너무 작아서 반복 패턴에서 끊어지므로 150까지 허용
     k = min(150, n)
     index = cv2.flann_Index(all_desc, dict(algorithm=1, trees=4))   # KD-tree
-    idx, dist = index.knnSearch(all_desc, k, params=dict(checks=64))
-    dist = np.sqrt(np.maximum(dist, 0.0))
 
-    # 1차: 각 특징점의 이미지별 최근접 후보들 수집
-    # best_for[q] = {상대이미지인덱스: [(거리, 전역인덱스, 로컬인덱스), ...]}
-    from collections import defaultdict
-    best_for: list[dict[int, list[tuple[float, int, int]]]] = [defaultdict(list) for _ in range(n)]
-    
-    for q in range(n):
-        qi = owner[q]
-        for slot in range(k):
-            t = idx[q, slot]
-            if t < 0 or t == q:
-                continue
-            ti = owner[t]
-            if ti == qi:
-                continue
-            d = dist[q, slot]
-            best_for[q][ti].append((d, t, local[t]))
-            
-    # 2차: 이미지 쌍별(Pairwise) 비율 검증(Lowe's ratio) 및 양방향 일관성(Mutual Best Match)
+    # 1차: 덩어리마다 (특징점, 상대 이미지) 묶음별 최근접·차근접을 구한다.
+    # knnSearch 결과는 한 줄 안에서 거리순이므로, 같은 묶음 안에서 처음 나온 것이
+    # 최근접, 두 번째가 차근접이다. 안정 정렬을 쓰면 그 순서가 그대로 유지된다.
+    # 양방향 검사에는 모든 묶음의 (열쇠, 최근접)만 있으면 되고, 거리와 순서는 비율
+    # 검증을 통과한 후보에만 필요하다. 그래서 둘을 나눠 담아 메모리를 줄인다.
+    all_key, all_best = [], []                 # 모든 묶음: 양방향 검사용
+    c_key, c_best, c_first = [], [], []        # 비율 검증을 통과한 후보
+    for start in range(0, n, chunk):
+        stop = min(n, start + chunk)
+        idx, dist = index.knnSearch(all_desc[start:stop], k, params=dict(checks=64))
+        dist = np.sqrt(np.maximum(dist, 0.0))
+        rows = np.repeat(np.arange(start, stop, dtype=np.int64), k)
+        t = idx.reshape(-1).astype(np.int64)
+        d = dist.reshape(-1)
+        flat = np.arange(start * k, stop * k, dtype=np.int64)     # 예전 순회 순서
+        del idx, dist
+        ok = t >= 0
+        ok[ok] &= (t[ok] != rows[ok]) & (owner[t[ok]] != owner[rows[ok]])
+        rows, t, d, flat = rows[ok], t[ok], d[ok], flat[ok]
+        key = rows * n_img + owner[t]
+        del rows, ok
+        order = np.argsort(key, kind="stable")
+        key, t, d, flat = key[order], t[order], d[order], flat[order]
+        del order
+        if len(key) == 0:
+            continue
+        head = np.flatnonzero(np.r_[True, key[1:] != key[:-1]])
+        count = np.diff(np.r_[head, len(key)])
+        d1 = d[head]
+        d2 = np.where(count > 1, d[np.minimum(head + 1, len(d) - 1)], np.inf)
+        # 이미지 쌍별(Pairwise) 비율 검증(Lowe's ratio). 차근접이 없으면 통과 (예전과 같다)
+        ratio_ok = ~(d1 > d2 * 0.8)
+        gk, gb = key[head], t[head].astype(np.int32)
+        all_key.append(gk)
+        all_best.append(gb)
+        c_key.append(gk[ratio_ok])
+        c_best.append(gb[ratio_ok])
+        c_first.append(flat[head][ratio_ok])
+        if progress:
+            progress(stop / n, f"겹치는 쌍 찾는 중… {stop * 100 // n}%")
+    del index
+    if not all_key:
+        return {}
+    key_all = np.concatenate(all_key)          # 질의 특징점 순으로 이미 정렬돼 있다
+    best_all = np.concatenate(all_best)
+    del all_key, all_best
+    key = np.concatenate(c_key)
+    best = np.concatenate(c_best).astype(np.int64)
+    first = np.concatenate(c_first)
+    q = key // n_img
+    ti = (key % n_img).astype(np.int32)
+
+    # 2차: 양방향 일관성(Mutual Best Match) — 상대방(best)도 나(q)를 가장 가까운 것으로 보는지
+    rev = best * n_img + owner[q]
+    pos = np.searchsorted(key_all, rev)
+    pos_c = np.minimum(pos, len(key_all) - 1)
+    keep_mask = (pos < len(key_all)) & (key_all[pos_c] == rev) & (best_all[pos_c] == q)
+
+    # 예전처럼 질의 순, 한 질의 안에서는 상대 이미지를 처음 만난 순으로 표를 모은다
+    sel = np.flatnonzero(keep_mask)
+    sel = sel[np.argsort(first[sel], kind="stable")]
+    image_ids = np.array([s.image_id for s in usable])
     votes: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
-    for q in range(n):
-        qi = owner[q]
-        for ti, matches in best_for[q].items():
-            if not matches:
-                continue
-            # 가장 가까운 매칭 2개를 비교해 모호함을 거른다 (Pairwise Lowe's Ratio)
-            # 파이썬 sort()는 짧은 리스트에서 매우 빠르다.
-            matches.sort(key=lambda x: x[0])
-            d1, t_global, b_li = matches[0]
-            
-            if len(matches) > 1:
-                d2 = matches[1][0]
-                if d1 > d2 * 0.8:
-                    continue  # 이 상대 이미지와는 확실한 매칭이 아님
-                    
-            # 양방향 일관성: 상대방(t_global)도 나(q)를 가장 가까운 것으로 보는지 확인
-            ti_matches = best_for[t_global].get(qi, [])
-            if not ti_matches:
-                continue
-                
-            ti_matches.sort(key=lambda x: x[0])
-            _, rev_global, _ = ti_matches[0]
-            if rev_global != q:
-                continue  # 양방향 일치 실패
-                
-            # 통과!
-            a_gi, b_gi = usable[qi].image_id, usable[ti].image_id
-            a_li = local[q]
-            if a_gi < b_gi:
-                votes[(a_gi, b_gi)].append((int(a_li), int(b_li)))
-            else:
-                votes[(b_gi, a_gi)].append((int(b_li), int(a_li)))
+    for qq, tt, oi in zip(q[sel].tolist(), best[sel].tolist(), ti[sel].tolist()):
+        a_gi, b_gi = int(image_ids[owner[qq]]), int(image_ids[oi])
+        a_li, b_li = int(local[qq]), int(local[tt])
+        if a_gi < b_gi:
+            votes[(a_gi, b_gi)].append((a_li, b_li))
+        else:
+            votes[(b_gi, a_gi)].append((b_li, a_li))
 
     # 이미지당 표가 많은 쌍만 남긴다
     keep: dict[tuple[int, int], list[tuple[int, int]]] = {}
@@ -446,7 +474,11 @@ def find_control_points(proxies: dict[int, np.ndarray], scales: dict[int, float]
     import os
     from concurrent.futures import ThreadPoolExecutor, as_completed
     
-    n_detect_workers = max(1, os.cpu_count() or 4)
+    # SIFT 한 장은 내부에서 두 배로 키운 영상으로 층을 쌓아 화소당 약 250바이트를 쓴다
+    # (1600px 프록시 한 장에 약 400MB). 코어 수만큼 동시에 돌리면 메모리가 작은 PC 에서
+    # 엔진이 꺼지므로, 남은 메모리 안에 드는 만큼만 동시에 돌린다.
+    largest = max((im.shape[0] * im.shape[1] for im in proxies.values()), default=1)
+    n_detect_workers = sysmem.workers(largest * 250 / 1e6)
     with ThreadPoolExecutor(max_workers=n_detect_workers) as pool:
         futures = {pool.submit(detect, proxies[img_id], img_id, scales.get(img_id, 1.0), max_features): img_id for img_id in ids}
         completed = 0
@@ -457,7 +489,7 @@ def find_control_points(proxies: dict[int, np.ndarray], scales: dict[int, float]
 
     # 2단계: 후보 쌍 찾기 (양방향 일관성 적용)
     note("match", 0.0, "겹치는 쌍 찾는 중…")
-    pairs = candidate_pairs(sets)
+    pairs = candidate_pairs(sets, progress=lambda f, m: note("match", f, m))
     by_id = {s.image_id: s for s in sets}
 
     # 3단계: 기하 검증 — 쌍별로 병렬 실행

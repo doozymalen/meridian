@@ -121,6 +121,18 @@ jobs:
           # 화면과 그 아래 엔진까지 함께 끈다
           taskkill /PID $p.Id /T /F | Out-Null
 
+      - name: 엔진으로 한 바퀴 돌려 보기 (사진 추가 → 정렬 → 미리보기 → 내보내기)
+        shell: pwsh
+        run: |
+          # 창이 뜨고 엔진이 답해도, 사용자가 정렬을 누르는 순간 엔진이 죽을 수 있다.
+          # 시험 사진을 만들어 사람이 하는 순서대로 엔진을 부려 본다.
+          .\.venv-win\Scripts\python.exe windows\smoke_test.py publish\engine\Meridian.exe
+          if ($LASTEXITCODE -ne 0) {
+            $engineLog = Join-Path $env:LOCALAPPDATA "Meridian\engine.log"
+            if (Test-Path $engineLog) { Write-Host "--- engine.log"; Get-Content $engineLog -Tail 80 }
+            throw "엔진 시험에 실패했습니다"
+          }
+
       - name: 설치 프로그램 만들기 (Inno Setup)
         shell: pwsh
         run: |

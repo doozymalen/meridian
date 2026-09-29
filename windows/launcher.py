@@ -97,6 +97,13 @@ def main() -> None:
     # import 문을 따라가며 담을 라이브러리를 고르는데, 문자열로 넘기면 서버 모듈을
     # 보지 못해 fastapi 같은 것을 통째로 빠뜨린다 (v1.0.0 윈도우 엔진이 그랬다).
     ensure_std_streams()
+    # OpenCV 같은 C 코드 안에서 죽으면 파이썬 오류 메시지가 남지 않는다. 그래도 어디서
+    # 죽었는지 engine.log 에 남기게 한다.
+    try:
+        import faulthandler
+        faulthandler.enable(file=sys.stderr, all_threads=True)
+    except Exception:
+        pass
     # 네이티브 화면(WinUI)이 띄울 때는 브라우저를 열지 않는다. 화면이 포트를
     # 정해 주고, 자기 프로세스 번호를 넘겨 자신이 죽으면 엔진도 같이 끝나게 한다.
     if os.environ.get("MERIDIAN_ENGINE_ONLY") == "1":
