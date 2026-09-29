@@ -6,7 +6,7 @@
 
 **여러 장의 사진을 하나의 파노라마로 잇는 데스크톱 앱**
 
-[![윈도우 앱 빌드](https://github.com/doozymalen/meridian/actions/workflows/windows.yml/badge.svg)](https://github.com/doozymalen/meridian/actions/workflows/windows.yml)
+[![앱 빌드](https://github.com/doozymalen/meridian/actions/workflows/build.yml/badge.svg)](https://github.com/doozymalen/meridian/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)](#설치)
 
@@ -77,15 +77,16 @@
 
 ## 설치
 
+[Releases](https://github.com/doozymalen/meridian/releases/latest) 에서 내려받는다.
+
 ### macOS (Apple Silicon, 11 Big Sur 이상)
 
-아직 배포본이 없다. [직접 빌드](#직접-빌드하기)하면 된다.
+`Meridian-mac.zip` 을 풀고 `Meridian.app` 을 응용 프로그램 폴더로 옮긴다.
 
 ### Windows (10 1809 이상, x64)
 
-[Actions](https://github.com/doozymalen/meridian/actions/workflows/windows.yml) 의 최근
-빌드에서 `Meridian-windows` 를 내려받아 압축을 풀고 `Meridian.exe` 를 실행한다.
-설치가 필요 없고, 폴더째 옮겨도 그대로 돈다.
+`Meridian-windows.zip` 을 풀고 `Meridian.exe` 를 실행한다. 설치가 필요 없고,
+폴더째 옮겨도 그대로 돈다.
 
 > [!NOTE]
 > 서명이 없어서 처음 실행할 때 macOS 와 Windows 가 각각 한 번 막는다.
@@ -173,18 +174,35 @@ open dist/Meridian.app
 ### Windows
 
 파이썬 실행 파일은 교차 빌드가 되지 않는다. 맥에서 `.exe` 를 만들 수 없고 그 반대도
-마찬가지다. 그래서 이 저장소는 **GitHub Actions 의 윈도우 러너**에서 빌드한다
-([`.github/workflows/windows.yml`](.github/workflows/windows.yml)).
-`Actions → 윈도우 앱 빌드 → Run workflow` 로 직접 돌릴 수 있고, `v*` 태그를 올리면
-릴리스에도 첨부된다.
+마찬가지다. 그래서 이 저장소는 **GitHub Actions 의 윈도우·맥 러너**에서 두 판을 함께 빌드한다
+([`.github/workflows/build.yml`](.github/workflows/build.yml)). PR 마다 돌고,
+`Actions → 앱 빌드 → Run workflow` 로 직접 돌릴 수도 있다.
+
+### 릴리스
+
+`v*` 태그를 올리면 두 판을 빌드해 릴리스를 만들고 `Meridian-windows.zip`,
+`Meridian-mac.zip` 을 붙인다. 둘 중 하나라도 실패하면 릴리스는 만들지 않는다.
+
+```bash
+git checkout main && git pull
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+깃허브 화면에서 `Releases → Draft a new release` 로 새 태그를 만들어도 된다.
+앱 안의 버전 번호는 `build_app.sh` 의 Info.plist 에 있다.
 
 윈도우 PC 가 있다면 PowerShell 에서 직접 해도 된다.
 
 ```powershell
 .\windows\build_windows.ps1                        # 엔진 (dist\Meridian\)
-dotnet publish winui\Meridian.WinUI.csproj -c Release -r win-x64 -o publish
+# 화면은 비주얼 스튜디오의 msbuild 로 ('개발자용 PowerShell for VS' 에서)
+msbuild winui\Meridian.WinUI.csproj /restore /t:Publish `
+  /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
+  /p:SelfContained=true /p:PublishDir=$PWD\publish\
 Copy-Item -Recurse dist\Meridian\* publish\engine\  # 화면이 엔진을 자식으로 띄운다
 ```
+
+자세한 것은 [docs/windows.md](docs/windows.md).
 
 ## 개발
 
@@ -215,6 +233,7 @@ MERIDIAN_TRACE=1            # 사진을 물리고 그리는 호출을 따라간�
 MERIDIAN_START_MODE=cp      # 제어점 화면으로 바로 연다
 MERIDIAN_PROJECT=<절대경로>  # 저장해 둔 프로젝트를 열고 시작한다
 MERIDIAN_WORKERS=4          # 내보낼 때 동시에 그릴 타일 수
+MERIDIAN_DATA=<경로>         # 캐시·프로젝트를 둘 곳 (윈도우 기본: %LOCALAPPDATA%\Meridian)
 ```
 
 ## 알아 둘 것

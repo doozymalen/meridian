@@ -15,18 +15,22 @@ engine\Meridian.exe 엔진 (PyInstaller 로 묶은 파이썬)
 
 ## 빌드
 
-[`.github/workflows/windows.yml`](../.github/workflows/windows.yml) 이 깃허브의 윈도우
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) 이 깃허브의 윈도우
 러너에서 전부 만든다. 손으로 할 때는 PowerShell 에서:
 
 ```powershell
 .\windows\build_windows.ps1                        # 엔진
-dotnet publish winui\Meridian.WinUI.csproj -c Release -r win-x64 -o publish
+# 화면 — '개발자용 PowerShell for VS' 에서 (msbuild 가 PATH 에 있어야 한다)
+msbuild winui\Meridian.WinUI.csproj /restore /t:Publish `
+  /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
+  /p:SelfContained=true /p:PublishDir=$PWD\publish\
 New-Item -ItemType Directory -Force publish\engine
 Copy-Item -Recurse -Force dist\Meridian\* publish\engine\
 ```
 
-- .NET SDK 는 **8.x** 를 쓴다. 10.x 에서는 Windows App SDK 가 쓰는 패키징 작업
-  (`ExpandPriContent`)을 찾지 못해 빌드가 깨진다. `global.json` 으로 못박아 두었다
+- 화면은 `dotnet publish` 로는 안 된다. dotnet SDK 의 MSBuild 에는 WinUI 가 쓰는
+  리소스 패키징 작업(`ExpandPriContent`)이 없다. 비주얼 스튜디오(또는 Build Tools)의
+  MSBuild 를 쓴다. .NET SDK 는 **8.x** 로 `global.json` 에 못박아 두었다
 - 엔진 빌드 결과가 150MB 보다 작으면 스크립트가 실패로 처리한다. PyInstaller 가
   라이브러리를 놓쳐도 exe 는 만들어지는데, 실행하면 곧바로 죽기 때문이다
 
@@ -35,26 +39,36 @@ Copy-Item -Recurse -Force dist\Meridian\* publish\engine\
 맥에서 코드를 읽고 짚어 둔 것이거나, 실제로 겪은 것들이다. 윈도우에서 손볼 때 여기부터
 보면 된다.
 
-### 한글 경로
+### 한글 경로 — 손봄
 
 `cv2.imread` / `cv2.imwrite` 는 윈도우에서 경로에 비ASCII 문자가 있으면 오류 없이
-`None` / `False` 를 돌려준다. 사용자 이름이나 폴더 이름에 한글이 흔하다.
-`np.fromfile` + `cv2.imdecode`, `cv2.imencode` + `tofile` 로 감싸면 양쪽 플랫폼에서
-똑같이 동작한다. **아직 손보지 않았다.**
+`None` / `False` 를 돌려준다. rawpy(LibRaw) 도 같다. 사용자 이름이나 폴더 이름에 한글이
+흔하다. 엔진은 `images.imread` / `images.imwrite` 만 쓰고, 이 둘은 윈도우에서 경로가
+ASCII 가 아닐 때만 `np.fromfile` + `cv2.imdecode`, `cv2.imencode` + `tofile` 로 돌아간다.
+RAW 는 파일 객체로 넘긴다. 새로 이미지를 읽고 쓰는 코드를 넣을 때 `cv2.imread` 를
+직접 부르지 말 것.
 
-### 캐시·프로젝트 저장 위치
+버퍼를 거치면 인코딩된 파일 전체가 메모리에 한 번 올라간다. 한글 폴더에 기가픽셀
+TIFF 를 내보내면 그만큼 메모리를 더 쓴다.
 
-엔진은 `server.py` 의 `ROOT` 아래에 `cache/`, `projects/` 를 만든다. PyInstaller 번들에서는
-프로그램 폴더 안이 되어, Program Files 에 두면 쓰기가 막힌다. `%LOCALAPPDATA%\Meridian\`
-으로 옮겨야 한다. **아직 손보지 않았다.**
+프로젝트 파일(`.meridian`)은 UTF-8 로 읽고 쓴다. 인코딩을 안 주면 윈도우는 cp949 로
+써서, 맥에서 만든 프로젝트가 윈도우에서 안 열리고 그 반대도 마찬가지였다.
+
+### 캐시·프로젝트 저장 위치 — 손봄
+
+윈도우에서는 `%LOCALAPPDATA%\Meridian\cache`, `...\projects` 에 둔다. 프로그램 폴더를
+Program Files 에 두어도 쓰기가 막히지 않는다. `MERIDIAN_DATA` 로 바꿀 수 있다. 맥은
+전처럼 앱 번들 안이다.
 
 캐시에는 사진 축소본과 기가픽셀 내보내기용 임시 캔버스(수십 GB 까지 간다)가 들어간다.
 
-### 메모리 맵 파일 삭제
+### 메모리 맵 파일 삭제 — 손봄, 실제 윈도우에서 확인 필요
 
 `render.render_final` 은 큰 캔버스를 `np.memmap` 으로 디스크에 잡았다가 끝나면 지운다.
-윈도우는 매핑이 살아 있는 파일을 지우면 `PermissionError` 가 난다. 내보내기를 끝까지
-해 보고, **중간에 취소도 해 보고** 임시 파일(`canvas_*.dat`, `.mask`)이 남는지 봐야 한다.
+윈도우는 매핑이 살아 있는 파일을 지우면 `PermissionError` 가 난다. 지금은 지우기가
+막히면 가비지 수집을 돌리고 몇 번 다시 해 보고, 그래도 남은 `canvas_*.dat` / `.mask` 는
+다음에 엔진이 켜질 때 치운다. 윈도우에서 내보내기를 끝까지 해 보고, **중간에 취소도
+해 보고** 캐시 폴더에 임시 파일이 남는지 봐야 한다.
 
 ### 되돌리면 안 되는 것
 
@@ -80,9 +94,11 @@ Copy-Item -Recurse -Force dist\Meridian\* publish\engine\
 | 파노라마 방향 (슬라이더·숫자·끌어서 돌리기·빠른 미리보기) | 있음 |
 | 화각 (가로·세로·맞춤) | 있음 |
 | 합성 설정, 렌즈 정보, 출력 크기·형식·품질, 내보내기(취소 포함) | 있음 |
-| 제어점 편집기 | **없음** |
-| 사진을 창에 끌어다 놓기 | **없음** |
-| 사이드바에서 사진 빼기·기준 바꾸기 | **없음** |
+| 제어점 편집기 (클릭하면 짝 제안, Alt+클릭은 짝도 직접, 수직·수평선, 끌어 옮기기, 확대경, 나쁜 점 정리) | 있음 |
+| 사진을 창에 끌어다 놓기 (폴더는 한 겹만 훑는다) | 있음 |
+| 사진 목록 오른쪽 클릭: 사용 안 함·기준 사진으로·프로젝트에서 제거 | 있음 |
+
+관리자 권한으로 띄운 창에는 탐색기에서 끌어다 놓을 수 없다. 윈도우가 막는 것이다.
 
 맥 화면(`mac/Sources/*.swift`)이 사실상 명세다. 특히 아래 세 가지는 맥에서 실제로 겪고
 고친 것이라, 새로 만들 때도 그대로 지키는 편이 좋다.

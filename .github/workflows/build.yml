@@ -1,0 +1,125 @@
+name: 앱 빌드
+
+# 파이썬 실행 파일은 교차 빌드가 안 된다. 맥에서 .exe 를, 윈도우에서 .app 을
+# 만들 수 없다. 그래서 깃허브가 빌려주는 윈도우 머신과 맥 머신에서 각각 빌드한다.
+on:
+  push:
+    tags: ["v*"]          # v1.0.0 같은 태그를 올리면 두 판을 만들어 릴리스에 붙인다
+  workflow_dispatch: {}   # 깃허브 화면에서 손으로도 돌릴 수 있다 (릴리스는 안 만든다)
+  pull_request:           # PR 마다 두 판이 빌드되는지 확인한다 (릴리스는 안 만든다)
+
+# 릴리스를 만들고 파일을 붙이려면 쓰기 권한이 있어야 한다.
+# 저장소 기본값(읽기 전용)으로는 마지막 단계가 403 으로 막힌다.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 엔진 빌드
+        shell: pwsh
+        run: .\windows\build_windows.ps1
+
+      - name: 결과 확인
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\Meridian\Meridian.exe")) { throw "exe 가 만들어지지 않았습니다" }
+          Get-ChildItem -Recurse dist\Meridian | Measure-Object Length -Sum |
+            ForEach-Object { "크기: {0:N0} MB" -f ($_.Sum / 1MB) }
+
+      - name: .NET 8 준비
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: MSBuild 준비
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 네이티브 화면 빌드 (WinUI 3)
+        shell: pwsh
+        run: |
+          # dotnet 의 MSBuild 에는 WinUI 가 쓰는 리소스 패키징 작업(ExpandPriContent)이
+          # 없다. 비주얼 스튜디오 쪽 MSBuild 로 빌드해야 한다.
+          msbuild winui\Meridian.WinUI.csproj /restore /t:Publish `
+            /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
+            /p:SelfContained=true /p:PublishDir=$PWD\publish\ /v:minimal
+          if (-not (Test-Path "publish\Meridian.exe")) { throw "화면 exe 가 만들어지지 않았습니다" }
+
+      - name: 엔진을 화면 폴더 안으로
+        shell: pwsh
+        run: |
+          # 화면은 같은 폴더의 engine\Meridian.exe 를 자식 프로세스로 띄운다
+          New-Item -ItemType Directory -Force -Path publish\engine | Out-Null
+          Copy-Item -Recurse -Force dist\Meridian\* publish\engine\
+          $size = [math]::Round((Get-ChildItem -Recurse publish | Measure-Object Length -Sum).Sum / 1MB)
+          Write-Host "합친 크기: ${size}MB"
+
+      - name: 내려받을 수 있게 올리기
+        uses: actions/upload-artifact@v4
+        with:
+          name: Meridian-windows
+          path: publish/
+          retention-days: 14
+
+  mac:
+    runs-on: macos-latest       # Apple Silicon. 결과물도 Apple Silicon 전용이다
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: 앱 빌드
+        run: ./build_app.sh
+
+      - name: 결과 확인과 압축
+        run: |
+          test -x dist/Meridian.app/Contents/MacOS/Meridian || { echo "앱이 만들어지지 않았습니다"; exit 1; }
+          # 번들 안의 심볼릭 링크와 서명을 지키려면 zip 이 아니라 ditto 로 묶어야 한다
+          ditto -c -k --sequesterRsrc --keepParent dist/Meridian.app Meridian-mac.zip
+          du -sh dist/Meridian.app Meridian-mac.zip
+
+      - name: 내려받을 수 있게 올리기
+        uses: actions/upload-artifact@v4
+        with:
+          name: Meridian-mac
+          path: Meridian-mac.zip
+          retention-days: 14
+
+  release:
+    # 두 판이 모두 성공했을 때만, 태그를 올렸을 때만 릴리스를 만든다
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 윈도우 판 압축
+        run: |
+          cd artifacts/Meridian-windows && zip -qr ../../Meridian-windows.zip . && cd ../..
+          cp artifacts/Meridian-mac/Meridian-mac.zip .
+          ls -lh *.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Meridian-windows.zip
+            Meridian-mac.zip
+          body: |
+            ## 내려받기
+            - **Windows** (10 1809 이상, x64): `Meridian-windows.zip` — 압축을 풀고 `Meridian.exe` 실행
+            - **macOS** (Apple Silicon, 11 이상): `Meridian-mac.zip` — 압축을 풀고 `Meridian.app` 을 응용 프로그램 폴더로
+
+            ## 처음 실행할 때
+            서명이 없어서 한 번 막힙니다.
+            - **Windows**: "Windows의 PC 보호" 창에서 **추가 정보 → 실행**
+            - **macOS**: 열리지 않는다고 나오면 **시스템 설정 → 개인정보 보호 및 보안** 맨 아래의 **그래도 열기**

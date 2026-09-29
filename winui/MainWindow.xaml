@@ -9,7 +9,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
 
-    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+          AllowDrop="True" DragOver="Root_DragOver" DragLeave="Root_DragLeave" Drop="Root_Drop">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -56,6 +57,10 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                <SelectorBar x:Name="ModeBar" SelectionChanged="Mode_Changed" Margin="0,0,12,0">
+                    <SelectorBarItem x:Name="PreviewModeItem" Text="미리보기" IsSelected="True" />
+                    <SelectorBarItem x:Name="CPModeItem" Text="제어점" />
+                </SelectorBar>
                 <Button Click="ZoomOut_Click" Content="−" Width="36" />
                 <Button Click="ZoomFit_Click" Content="맞춤" />
                 <Button Click="ZoomIn_Click" Content="+" Width="36" />
@@ -72,14 +77,16 @@
 
             <!-- 사진 목록 -->
             <ListView x:Name="PhotoList" Grid.Column="0" SelectionMode="Single"
+                      ContextRequested="PhotoList_ContextRequested"
                       Background="{ThemeResource LayerFillColorDefaultBrush}"
                       BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:PhotoItem">
-                        <Grid ColumnSpacing="10" Padding="0,4">
+                        <Grid ColumnSpacing="10" Padding="0,4" Opacity="{x:Bind Opacity}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="56" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Border Grid.Column="0" CornerRadius="4" Background="{ThemeResource ControlAltFillColorSecondaryBrush}">
                                 <Image Source="{x:Bind Thumb}" Width="56" Height="42" Stretch="UniformToFill" />
@@ -88,13 +95,22 @@
                                 <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Text="{x:Bind Detail}" FontSize="11" Opacity="0.6" />
                             </StackPanel>
+                            <Border Grid.Column="2" VerticalAlignment="Top" CornerRadius="3" Padding="5,0,5,1"
+                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                    Visibility="{x:Bind AnchorVisibility}">
+                                <TextBlock Text="기준" FontSize="10" FontWeight="SemiBold"
+                                           Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                            </Border>
                         </Grid>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
 
+            <!-- 제어점 편집 (도구 모음의 '제어점' 으로 바꾼다) -->
+            <local:CPEditor x:Name="Editor" Grid.Column="1" Visibility="Collapsed" />
+
             <!-- 미리보기 -->
-            <Grid Grid.Column="1" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+            <Grid x:Name="PreviewPane" Grid.Column="1" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
                 <ScrollViewer x:Name="PreviewScroll" ZoomMode="Enabled" MinZoomFactor="0.05" MaxZoomFactor="12"
                               HorizontalScrollMode="Auto" VerticalScrollMode="Auto"
                               HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -236,6 +252,16 @@
                             Style="{ThemeResource AccentButtonStyle}" HorizontalAlignment="Stretch" />
                 </StackPanel>
             </ScrollViewer>
+        </Grid>
+
+        <!-- 끌어다 놓을 때 -->
+        <Grid x:Name="DropOverlay" Grid.RowSpan="2" Visibility="Collapsed" IsHitTestVisible="False">
+            <Rectangle Fill="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.12" />
+            <Rectangle Margin="18" RadiusX="12" RadiusY="12" StrokeThickness="2" StrokeDashArray="4.5,3"
+                       Stroke="{ThemeResource AccentFillColorDefaultBrush}" />
+            <TextBlock x:Name="DropLabel" Text="" FontSize="17" FontWeight="Medium"
+                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Grid>
     </Grid>
 </Window>

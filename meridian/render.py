@@ -13,10 +13,12 @@
 
 from __future__ import annotations
 
+import gc
 import itertools
 import math
 import os
 import threading
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -28,7 +30,7 @@ import numpy as np
 from .blend import (Patch, apply_field, apply_gains, blend, distance_partition,
                     find_seams, gains_to_ev, match_low_frequency, solve_gains)
 from .camera import ImageParams, Lens
-from .images import build_proxy, read_image
+from .images import build_proxy, imwrite, read_image
 from . import photometric
 from .project import Project, RenderSettings
 from . import xmp
@@ -353,6 +355,41 @@ def extend_uncovered(canvas, covered, feather: float = 1.5) -> None:
 
 # ---------------------------------------------------------------- 최종 출력
 
+SCRATCH_GLOBS = ("canvas_*.dat", "canvas_*.mask")
+
+
+def _remove_scratch(path: Path) -> bool:
+    """렌더용 임시 캔버스 파일을 지운다.
+
+    윈도우는 메모리 맵이 살아 있는 파일을 지우지 못한다(PermissionError).
+    취소로 빠져나올 때는 아직 풀리지 않은 참조가 잠깐 남아 있을 수 있어,
+    가비지 수집을 돌리고 몇 번 다시 해 본다. 그래도 안 되면 다음에 엔진이
+    켜질 때 sweep_scratch 가 치운다.
+    """
+    for attempt in range(5):
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except PermissionError:
+            gc.collect()
+            time.sleep(0.1 * (attempt + 1))
+    return False
+
+
+def sweep_scratch(cache_dir: Path) -> None:
+    """지난 실행이 남긴 임시 캔버스를 치운다 (수십 GB 가 될 수 있다).
+
+    다른 엔진이 지금 쓰고 있는 파일이면 윈도우는 지우기를 거절하고, POSIX 는
+    매핑이 풀릴 때까지 내용을 살려 두므로 어느 쪽이든 안전하다.
+    """
+    for pattern in SCRATCH_GLOBS:
+        for f in Path(cache_dir).glob(pattern):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
 def render_final(project: Project, out_path: Path, cache_dir: Path,
                  progress=None) -> RenderReport:
     """원본 해상도로 렌더해 파일로 쓴다.
@@ -610,8 +647,8 @@ def render_final(project: Project, out_path: Path, cache_dir: Path,
     finally:
         # 기가픽셀 캔버스는 디스크에 수십 GB 다. 취소로 빠져나가도 지워야 한다.
         del canvas, covered
-        canvas_path.unlink(missing_ok=True)
-        canvas_path.with_suffix(".mask").unlink(missing_ok=True)
+        _remove_scratch(canvas_path)
+        _remove_scratch(canvas_path.with_suffix(".mask"))
 
     return RenderReport(width=lay.w, height=lay.h, images_used=len(ids),
                         seconds=time.time() - t0, path=str(out_path),
@@ -766,14 +803,14 @@ def _write_image(canvas: np.ndarray, covered: np.ndarray, path: Path,
     ext = path.suffix.lower().lstrip(".") or s.format
     if ext in ("tif", "tiff"):
         params = [cv2.IMWRITE_TIFF_COMPRESSION, 5]         # LZW
-        ok = cv2.imwrite(str(path), canvas, params)
+        ok = imwrite(path, canvas, params)
     elif ext == "png":
         # 덮이지 않은 곳은 투명하게 — 크롭 전 상태를 보존한다
         bgra = np.dstack([canvas, covered])
-        ok = cv2.imwrite(str(path), bgra, [cv2.IMWRITE_PNG_COMPRESSION, 6])
+        ok = imwrite(path, bgra, [cv2.IMWRITE_PNG_COMPRESSION, 6])
     else:
-        ok = cv2.imwrite(str(path), canvas,
-                         [cv2.IMWRITE_JPEG_QUALITY, int(np.clip(s.quality, 1, 100))])
+        ok = imwrite(path, canvas,
+                     [cv2.IMWRITE_JPEG_QUALITY, int(np.clip(s.quality, 1, 100))])
     if not ok:
         raise OSError(f"저장하지 못했습니다: {path}")
 

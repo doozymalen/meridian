@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +29,54 @@ def is_raw(path: Path | str) -> bool:
     return Path(path).suffix.lower() in RAW_EXT
 
 
+# ---------------------------------------------------------------- 파일 입출력
+#
+# cv2.imread / cv2.imwrite 는 윈도우에서 경로에 비ASCII 문자(한글 사용자 이름,
+# 폴더 이름)가 있으면 오류 없이 None / False 를 돌려준다. 그런 경로일 때만
+# 바이트를 파이썬이 읽고 쓰고 OpenCV 에는 메모리 버퍼를 넘긴다. 나머지는 그대로
+# 두는데, 버퍼를 거치면 기가픽셀 TIFF 가 통째로 메모리에 한 번 더 올라가기 때문이다.
+
+def _needs_buffer(path: Path | str) -> bool:
+    if sys.platform != "win32":
+        return False
+    return not str(path).isascii()
+
+
+def imread(path: Path | str, flags: int = cv2.IMREAD_COLOR) -> np.ndarray | None:
+    if not _needs_buffer(path):
+        return cv2.imread(str(path), flags)
+    try:
+        buf = np.fromfile(str(path), dtype=np.uint8)
+    except OSError:
+        return None
+    if buf.size == 0:
+        return None
+    return cv2.imdecode(buf, flags)
+
+
+def imwrite(path: Path | str, img: np.ndarray, params: list[int] | None = None) -> bool:
+    params = params or []
+    if not _needs_buffer(path):
+        return cv2.imwrite(str(path), img, params)
+    ok, buf = cv2.imencode(Path(path).suffix or ".jpg", img, params)
+    if not ok:
+        return False
+    try:
+        buf.tofile(str(path))
+    except OSError:
+        return False
+    return True
+
+
+def _open_raw(path: Path):
+    """rawpy(LibRaw) 도 윈도우에서는 비ASCII 경로를 못 연다. 그때는 파일 객체로 넘긴다."""
+    import rawpy
+    if not _needs_buffer(path):
+        return rawpy.imread(str(path))
+    with open(path, "rb") as fh:
+        return rawpy.imread(fh)
+
+
 # ---------------------------------------------------------------- 원본 읽기
 
 def read_image(path: Path | str, half_size: bool = False) -> np.ndarray:
@@ -38,7 +87,7 @@ def read_image(path: Path | str, half_size: bool = False) -> np.ndarray:
     path = Path(path)
     if is_raw(path):
         import rawpy
-        with rawpy.imread(str(path)) as raw:
+        with _open_raw(path) as raw:
             rgb = raw.postprocess(
                 use_camera_wb=True,
                 no_auto_bright=True,          # 장마다 밝기가 튀면 스티칭이 어긋난다
@@ -50,9 +99,9 @@ def read_image(path: Path | str, half_size: bool = False) -> np.ndarray:
             )
         return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-    img = cv2.imread(str(path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+    img = imread(path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
     if img is None:                           # PNG 16bit, EXR 등 예외 경로
-        img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        img = imread(path, cv2.IMREAD_UNCHANGED)
         if img is None:
             raise OSError(f"이미지를 열 수 없습니다: {path}")
         if img.dtype != np.uint8:
@@ -80,8 +129,7 @@ def read_size(path: Path | str) -> tuple[int, int]:
     """전체 디코딩 없이 (width, height) 를 얻는다."""
     path = Path(path)
     if is_raw(path):
-        import rawpy
-        with rawpy.imread(str(path)) as raw:
+        with _open_raw(path) as raw:
             # iwidth/iheight 는 회전 '전' 크기다. postprocess 는 sizes.flip 을
             # 적용해 내보내므로 여기서도 같은 회전을 반영해야 한다.
             # (flip 5 = 90도 반시계, 6 = 90도 시계 — 둘 다 가로세로가 바뀐다)
@@ -271,7 +319,7 @@ def build_proxy(path: Path | str, cache_dir: Path, max_dim: int = PROXY_MAX) -> 
     cache_dir.mkdir(parents=True, exist_ok=True)
     dst = cache_dir / f"{cache_key(path, f'proxy{max_dim}')}.jpg"
     if dst.exists():
-        img = cv2.imread(str(dst), cv2.IMREAD_COLOR)
+        img = imread(dst)
         if img is not None:
             return img, dst
 
@@ -282,7 +330,7 @@ def build_proxy(path: Path | str, cache_dir: Path, max_dim: int = PROXY_MAX) -> 
     if scale < 1.0:
         interp = cv2.INTER_AREA
         src = cv2.resize(src, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=interp)
-    cv2.imwrite(str(dst), src, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    imwrite(dst, src, [cv2.IMWRITE_JPEG_QUALITY, 92])
     return src, dst
 
 
@@ -294,7 +342,7 @@ def build_thumb(path: Path | str, cache_dir: Path) -> Path:
         h, w = proxy.shape[:2]
         s = min(1.0, THUMB_MAX / max(w, h))
         t = cv2.resize(proxy, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA)
-        cv2.imwrite(str(dst), t, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        imwrite(dst, t, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return dst
 
 

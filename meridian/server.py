@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from . import features, live, optimize as opt, photometric, render
 from .camera import ImageParams, Lens, pixels_to_rays, rays_to_pixels, rotation_matrix, lens_inverse_lut
 from .features import ControlPoint
-from .images import SUPPORTED_EXT, build_proxy, build_thumb, cache_key
+from .images import SUPPORTED_EXT, build_proxy, build_thumb, cache_key, imwrite
 from .project import Project, RenderSettings
 from .warp import clamp_fov, compute_layout
 
@@ -38,10 +38,30 @@ IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform == "win32"
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE = ROOT / "cache"
-PROJECTS = ROOT / "projects"
-CACHE.mkdir(exist_ok=True)
-PROJECTS.mkdir(exist_ok=True)
+
+
+def _data_root() -> Path:
+    """캐시와 프로젝트를 둘 곳.
+
+    윈도우에서는 프로그램 폴더가 Program Files 일 수 있어 쓰기가 막힌다.
+    사용자별 %LOCALAPPDATA%\\Meridian 에 둔다. 맥은 앱 번들 안에 두던 그대로다.
+    MERIDIAN_DATA 로 어디든 바꿀 수 있다.
+    """
+    env = os.environ.get("MERIDIAN_DATA")
+    if env:
+        return Path(env)
+    if IS_WIN:
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "Meridian"
+    return ROOT
+
+
+DATA = _data_root()
+CACHE = DATA / "cache"
+PROJECTS = DATA / "projects"
+CACHE.mkdir(parents=True, exist_ok=True)
+PROJECTS.mkdir(parents=True, exist_ok=True)
+render.sweep_scratch(CACHE)
 
 app = FastAPI(title="Meridian")
 
@@ -789,7 +809,7 @@ def preview(req: PreviewReq):
         img, lay, evs = render.render_preview(p, CACHE, req.max_dim,
                                               show_seams=req.show_seams, progress=progress)
         name = f"preview_{uuid.uuid4().hex[:10]}.jpg"
-        cv2.imwrite(str(CACHE / name), img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        imwrite(CACHE / name, img, [cv2.IMWRITE_JPEG_QUALITY, 88])
         full = render._layout_for(p, center=lay.center)
         native = compute_layout(p.active_params(), p.lenses, p.sizes(),
                                 p.settings.projection, center=lay.center,

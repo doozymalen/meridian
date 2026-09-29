@@ -11,6 +11,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;   // RangeBaseValueChangedEventArgs
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
 
@@ -23,12 +25,19 @@ public sealed class PhotoItem
     public string Name { get; init; } = "";
     public string Detail { get; init; } = "";
     public BitmapImage? Thumb { get; init; }
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public bool Enabled { get; init; } = true;
+    public bool IsAnchor { get; init; }
+    public double Opacity => Enabled ? 1.0 : 0.4;
+    public Visibility AnchorVisibility => IsAnchor ? Visibility.Visible : Visibility.Collapsed;
 }
 
 public sealed partial class MainWindow : Window
 {
     private readonly Engine _engine = new();
     private readonly ObservableCollection<PhotoItem> _photos = new();
+    private readonly Dictionary<int, BitmapImage?> _thumbs = new();
 
     private JsonNode? _project;
     private JsonNode? _preview;          // 마지막 미리보기 결과
@@ -68,6 +77,9 @@ public sealed partial class MainWindow : Window
         BlendCombo.ItemsSource = new[] { "멀티밴드", "페더", "쓰지 않음" };
         ExposureCombo.ItemsSource = new[] { "자동", "쓰지 않음" };
         FormatCombo.ItemsSource = new[] { "JPEG", "TIFF", "PNG" };
+
+        Editor.Engine = _engine;
+        Editor.Changed += async () => { try { await RefreshAsync(); } catch { } };
 
         Root.KeyDown += OnKeyDown;
         Activated += OnFirstActivated;
@@ -118,6 +130,7 @@ public sealed partial class MainWindow : Window
         FillInspector();
         UpdatePanels();
         UpdateStatus();
+        if (Editor.Visibility == Visibility.Visible) await UpdateEditorAsync();
     }
 
     private async Task FillPhotosAsync()
@@ -125,34 +138,45 @@ public sealed partial class MainWindow : Window
         var images = _project?["images"]?.AsObject();
         if (images is null) { _photos.Clear(); return; }
         var ids = images.Select(kv => int.Parse(kv.Key)).OrderBy(i => i).ToList();
-        if (_photos.Count == ids.Count && _photos.Select(p => p.Id).SequenceEqual(ids)) return;
+        int? anchor = _project?["anchor"]?.GetValue<int>();
+        bool Enabled(int id) => images[id.ToString()]?["enabled"]?.GetValue<bool>() != false;
+        // 켜고 끄기·기준 바꾸기도 줄 모양이 바뀌므로 함께 비교한다
+        if (_photos.Count == ids.Count
+            && _photos.Select(p => (p.Id, p.Enabled, p.IsAnchor))
+                      .SequenceEqual(ids.Select(i => (i, Enabled(i), i == anchor)))) return;
 
+        int? selected = (PhotoList.SelectedItem as PhotoItem)?.Id;
+        foreach (int gone in _thumbs.Keys.Except(ids).ToList()) _thumbs.Remove(gone);
         _photos.Clear();
         foreach (int id in ids)
         {
             var im = images[id.ToString()]!;
             string path = im["path"]?.GetValue<string>() ?? "";
-            double mp = (im["width"]?.GetValue<double>() ?? 0) * (im["height"]?.GetValue<double>() ?? 0) / 1e6;
+            int w = (int)(im["width"]?.GetValue<double>() ?? 0), h = (int)(im["height"]?.GetValue<double>() ?? 0);
             var exif = im["exif"];
             string focal = exif?["focal_length"] is JsonNode f ? $" · {f.GetValue<double>():0}mm" : "";
-            BitmapImage? thumb = null;
-            try
+            if (!_thumbs.TryGetValue(id, out var thumb))
             {
-                var bytes = await _engine.BytesAsync($"/api/thumb/{id}");
-                thumb = await ToBitmapAsync(bytes);
+                try { thumb = await ToBitmapAsync(await _engine.BytesAsync($"/api/thumb/{id}")); }
+                catch { thumb = null; }
+                _thumbs[id] = thumb;
             }
-            catch { }
             _photos.Add(new PhotoItem
             {
                 Id = id,
                 Name = Path.GetFileName(path),
-                Detail = $"{mp:0}MP{focal}",
+                Detail = $"{w * (double)h / 1e6:0}MP{focal}",
                 Thumb = thumb,
+                Width = w,
+                Height = h,
+                Enabled = Enabled(id),
+                IsAnchor = id == anchor,
             });
         }
+        if (selected is int sel) PhotoList.SelectedItem = _photos.FirstOrDefault(p => p.Id == sel);
     }
 
-    private static async Task<BitmapImage> ToBitmapAsync(byte[] bytes)
+    internal static async Task<BitmapImage> ToBitmapAsync(byte[] bytes)
     {
         var bmp = new BitmapImage();
         using var ms = new InMemoryRandomAccessStream();
@@ -297,24 +321,174 @@ public sealed partial class MainWindow : Window
 
     private nint Hwnd => WinRT.Interop.WindowNative.GetWindowHandle(this);
 
+    /// <summary>엔진이 읽을 수 있는 확장자. 드롭한 폴더를 훑을 때도 쓴다.</summary>
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp",
+        ".arw", ".srf", ".sr2", ".cr2", ".cr3", ".nef", ".nrw", ".dng", ".raf",
+        ".orf", ".rw2", ".pef", ".srw", ".erf", ".kdc", ".dcr", ".3fr", ".iiq",
+    };
+
     private async void AddPhotos_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileOpenPicker { ViewMode = PickerViewMode.Thumbnail };
-        foreach (var ext in new[] { ".jpg", ".jpeg", ".png", ".tif", ".tiff",
-                                    ".arw", ".cr2", ".cr3", ".nef", ".raf", ".rw2", ".dng" })
-            picker.FileTypeFilter.Add(ext);
+        foreach (var ext in ImageExtensions) picker.FileTypeFilter.Add(ext);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, Hwnd);
         var files = await picker.PickMultipleFilesAsync();
         if (files is null || files.Count == 0) return;
+        await AddPathsAsync(files.Select(f => f.Path).ToList());
+    }
 
+    /// <summary>파일 선택창과 끌어다 놓기가 함께 쓰는 경로.</summary>
+    private async Task AddPathsAsync(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return;
         try
         {
-            await RunJobAsync("사진 읽는 중", "/api/images/add",
-                              new { paths = files.Select(f => f.Path).ToArray() });
+            var r = await RunJobAsync("사진 읽는 중", "/api/images/add", new { paths });
+            await RefreshAsync();
+            if ((r?["added"] as JsonArray)?.Count is null or 0)
+                await ReportAsync("추가된 사진이 없습니다. 이미 들어 있거나 읽을 수 없는 형식입니다.");
+        }
+        catch (Exception ex) { await ReportAsync(ex.Message); }
+    }
+
+    // ---------------------------------------------------------------- 끌어다 놓기
+
+    /// <summary>놓인 것 중 사진만 고른다. 폴더는 그 안을 한 겹만 훑는다.</summary>
+    private static List<string> AcceptableFiles(IEnumerable<IStorageItem> items)
+    {
+        var out_ = new List<string>();
+        foreach (var item in items)
+        {
+            if (string.IsNullOrEmpty(item.Path)) continue;
+            if (item is IStorageFolder)
+            {
+                try
+                {
+                    out_.AddRange(Directory.EnumerateFiles(item.Path)
+                        .Where(f => ImageExtensions.Contains(Path.GetExtension(f))));
+                }
+                catch { }
+            }
+            else if (ImageExtensions.Contains(Path.GetExtension(item.Path)))
+            {
+                out_.Add(item.Path);
+            }
+        }
+        out_.Sort(StringComparer.OrdinalIgnoreCase);
+        return out_;
+    }
+
+    private async void Root_DragOver(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        var deferral = e.GetDeferral();
+        try
+        {
+            var files = AcceptableFiles(await e.DataView.GetStorageItemsAsync());
+            if (files.Count == 0)
+            {
+                e.AcceptedOperation = DataPackageOperation.None;
+                DropOverlay.Visibility = Visibility.Collapsed;
+                return;
+            }
+            e.AcceptedOperation = DataPackageOperation.Copy;
+            e.DragUIOverride.Caption = "사진 추가";
+            DropLabel.Text = files.Count == 1 ? "사진 1장 추가" : $"사진 {files.Count}장 추가";
+            DropOverlay.Visibility = Visibility.Visible;
+        }
+        catch { }
+        finally { deferral.Complete(); }
+    }
+
+    private void Root_DragLeave(object sender, DragEventArgs e) => DropOverlay.Visibility = Visibility.Collapsed;
+
+    private async void Root_Drop(object sender, DragEventArgs e)
+    {
+        DropOverlay.Visibility = Visibility.Collapsed;
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        List<string> files;
+        var deferral = e.GetDeferral();
+        try { files = AcceptableFiles(await e.DataView.GetStorageItemsAsync()); }
+        catch { files = new(); }
+        finally { deferral.Complete(); }
+        await AddPathsAsync(files);
+    }
+
+    // ---------------------------------------------------------------- 사진 목록 메뉴
+
+    private void PhotoList_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
+    {
+        // 오른쪽 클릭한 줄을 찾는다. 선택과는 따로다.
+        DependencyObject? d = e.OriginalSource as DependencyObject;
+        while (d is not null and not ListViewItem) d = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(d);
+        if (d is not ListViewItem lvi || PhotoList.ItemFromContainer(lvi) is not PhotoItem item) return;
+
+        var menu = new MenuFlyout();
+        var toggle = new MenuFlyoutItem { Text = item.Enabled ? "사용 안 함" : "다시 사용" };
+        toggle.Click += (_, _) => _ = MutateAsync(() =>
+            _engine.PatchAsync($"/api/images/{item.Id}", new { enabled = !item.Enabled }));
+        var anchor = new MenuFlyoutItem { Text = "기준 사진으로", IsEnabled = !item.IsAnchor };
+        anchor.Click += (_, _) => _ = MutateAsync(() =>
+            _engine.PatchAsync($"/api/images/{item.Id}", new { anchor = true }));
+        var remove = new MenuFlyoutItem { Text = "프로젝트에서 제거", Icon = new FontIcon { Glyph = "\uE74D" } };
+        remove.Click += (_, _) => _ = MutateAsync(() => _engine.DeleteAsync($"/api/images/{item.Id}"));
+        menu.Items.Add(toggle);
+        menu.Items.Add(anchor);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(remove);
+
+        if (e.TryGetPosition(lvi, out var pos)) menu.ShowAt(lvi, pos);
+        else menu.ShowAt(lvi);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// 사진을 끄거나 빼거나 기준을 바꾼다. 그림에 영향이 있으니 갱신 필요로 표시하되,
+    /// 그리는 것은 사용자가 정한다 (다른 설정과 같다).
+    /// </summary>
+    private async Task MutateAsync(Func<Task> work)
+    {
+        try
+        {
+            await work();
+            _pending = true;
             await RefreshAsync();
         }
         catch (Exception ex) { await ReportAsync(ex.Message); }
     }
+
+    // ---------------------------------------------------------------- 미리보기 / 제어점 전환
+
+    private void Mode_Changed(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        // XAML 이 처음 고른 항목으로도 불린다. 그때는 아직 칸들이 연결되기 전이다.
+        if (Editor is null || PreviewPane is null || !_started) return;
+        _ = ShowModeAsync(sender.SelectedItem == CPModeItem);
+    }
+
+    private async Task ShowModeAsync(bool controlPoints)
+    {
+        if (controlPoints && _photos.Count(p => p.Enabled) < 2)
+        {
+            ModeBar.SelectedItem = PreviewModeItem;
+            await ReportAsync("켜진 사진이 두 장 이상 있어야 제어점을 볼 수 있습니다");
+            return;
+        }
+        Editor.Visibility = controlPoints ? Visibility.Visible : Visibility.Collapsed;
+        PreviewPane.Visibility = controlPoints ? Visibility.Collapsed : Visibility.Visible;
+        if (controlPoints)
+        {
+            await UpdateEditorAsync();
+            Editor.Focus(FocusState.Programmatic);
+        }
+    }
+
+    private Task UpdateEditorAsync()
+        => Editor.UpdateAsync(_photos.Where(p => p.Enabled)
+                                     .Select(p => new EditorImage(p.Id, p.Name, p.Width, p.Height))
+                                     .ToList(), Optimized);
 
     private async void Align_Click(object sender, RoutedEventArgs e)
     {

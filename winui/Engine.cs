@@ -90,9 +90,19 @@ public sealed class Engine : IDisposable
     public async Task<JsonNode?> PostAsync(string path, object? body = null)
     {
         using var r = await _http.PostAsJsonAsync(Base + path, body ?? new { });
-        r.EnsureSuccessStatusCode();
+        await EnsureOkAsync(r);
         string s = await r.Content.ReadAsStringAsync();
         return string.IsNullOrWhiteSpace(s) ? null : JsonNode.Parse(s);
+    }
+
+    /// <summary>실패하면 엔진이 준 설명({"detail": ...})을 그대로 보여 준다.</summary>
+    private static async Task EnsureOkAsync(HttpResponseMessage r)
+    {
+        if (r.IsSuccessStatusCode) return;
+        string body = await r.Content.ReadAsStringAsync();
+        string? detail = null;
+        try { detail = JsonNode.Parse(body)?["detail"]?.ToString(); } catch { }
+        throw new HttpRequestException(detail ?? $"엔진 오류 ({(int)r.StatusCode})");
     }
 
     public async Task<JsonNode?> PatchAsync(string path, object body)
@@ -102,13 +112,16 @@ public sealed class Engine : IDisposable
             Content = JsonContent.Create(body),
         };
         using var r = await _http.SendAsync(req);
-        r.EnsureSuccessStatusCode();
+        await EnsureOkAsync(r);
         string s = await r.Content.ReadAsStringAsync();
         return string.IsNullOrWhiteSpace(s) ? null : JsonNode.Parse(s);
     }
 
     public async Task DeleteAsync(string path)
-        => (await _http.DeleteAsync(Base + path)).EnsureSuccessStatusCode();
+    {
+        using var r = await _http.DeleteAsync(Base + path);
+        await EnsureOkAsync(r);
+    }
 
     public Task<byte[]> BytesAsync(string path) => _http.GetByteArrayAsync(Base + path);
 

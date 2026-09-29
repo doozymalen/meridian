@@ -260,9 +260,9 @@ class Project:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.modified = time.time()
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=1))
+        tmp.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(path)             # 저장 중 죽어도 기존 파일이 남도록
 
     @classmethod
     def load(cls, path: Path) -> "Project":
-        return cls.from_dict(json.loads(Path(path).read_text()))
+        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
