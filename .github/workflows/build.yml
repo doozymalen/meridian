@@ -83,7 +83,15 @@ jobs:
             throw "Meridian.exe 가 켜지자마자 꺼졌습니다 (종료 코드 $($p.ExitCode))"
           }
           if (Test-Path $log) { Get-Content $log; throw "실행 중 오류가 기록됐습니다" }
-          Write-Host "20초 동안 정상 실행됨"
+          # 화면은 엔진(engine\Meridian.exe)을 자식으로 띄운다. 엔진이 못 뜨면 화면은
+          # 살아 있어도 오류 창만 보인다. 이름이 같으니 경로로 가린다.
+          $engine = Get-Process Meridian -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -like "*\engine\Meridian.exe" }
+          if (-not $engine) {
+            taskkill /PID $p.Id /T /F | Out-Null
+            throw "화면은 켜졌지만 엔진이 떠 있지 않습니다"
+          }
+          Write-Host "20초 동안 정상 실행됨 (화면 PID $($p.Id), 엔진 PID $($engine[0].Id))"
           # 화면과 그 아래 엔진까지 함께 끈다
           taskkill /PID $p.Id /T /F | Out-Null
 
