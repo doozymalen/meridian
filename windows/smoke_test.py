@@ -63,8 +63,12 @@ class Engine:
                    MERIDIAN_DATA=str(data))
         # 사용자 PC 처럼 콘솔 없이 띄운다 (표준 출력이 없는 상황까지 재현)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        # 엔진의 출력(파이썬 오류, faulthandler 가 남기는 강제 종료 위치)은 파일로 받아
+        # 실패하면 보여 준다
+        self.log_path = data.parent / "engine_output.log"
+        self.log = open(self.log_path, "wb")
         self.proc = subprocess.Popen([exe], env=env, stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     stdout=self.log, stderr=subprocess.STDOUT,
                                      creationflags=flags)
         self.base = f"http://127.0.0.1:{self.port}"
         for _ in range(200):
@@ -78,7 +82,16 @@ class Engine:
 
     def alive(self, where: str) -> None:
         if self.proc.poll() is not None:
-            raise SystemExit(f"엔진이 '{where}' 중에 죽었습니다 (종료 코드 {self.proc.returncode})")
+            self.dump()
+            raise SystemExit(f"엔진이 '{where}' 중에 죽었습니다 (종료 코드 {self.proc.returncode:#x})")
+
+    def dump(self) -> None:
+        try:
+            self.log.flush()
+            text = self.log_path.read_bytes().decode("utf-8", "replace")
+            print("--- 엔진 출력\n" + (text[-6000:] or "(비어 있음)"), flush=True)
+        except Exception:
+            pass
 
     def _send(self, path: str, body=None, raw=False):
         data = None if body is None else json.dumps(body).encode()
@@ -167,6 +180,10 @@ def main() -> None:
             raise SystemExit(f"내보내기 임시 파일이 남았습니다: {left}")
         eng.alive("마무리")
         print("== 모두 통과")
+    except BaseException:
+        time.sleep(1)
+        eng.dump()
+        raise
     finally:
         eng.proc.kill()
 

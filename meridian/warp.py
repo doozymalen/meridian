@@ -409,6 +409,9 @@ def _full_height(projection: str, full_w: int, hfov: float, f: float) -> int:
 
 # ---------------------------------------------------------------- 워핑
 
+WARP_BAND_PIXELS = 262144    # 워핑할 때 광선을 한 번에 계산할 화소 수 (띠 하나)
+
+
 def warp_image(img: np.ndarray, params: ImageParams, lens: Lens,
                layout: PanoLayout, src_size: tuple[int, int] | None = None,
                roi: tuple[int, int, int, int] | None = None,
@@ -424,17 +427,27 @@ def warp_image(img: np.ndarray, params: ImageParams, lens: Lens,
     rx0, ry0, rw, rh = roi if roi else layout.roi
 
     R = rotation_matrix(params.yaw, params.pitch, params.roll)
-    rays, ok = pano_grid_to_rays(layout.projection, layout.full_w, layout.full_h,
-                                 layout.hfov, layout.center, (rx0, ry0, rw, rh))
     lut = lens_inverse_lut(lens.a, lens.b, lens.c)
-    px, valid = rays_to_pixels(rays, lens, ow, oh, R, lut)
-
     sx, sy = sw / ow, sh / oh          # 원본 -> 실제 픽셀 배열 배율
-    mx = (px[..., 0] * sx).astype(np.float32)
-    my = (px[..., 1] * sy).astype(np.float32)
 
-    inside = (ok & valid & (mx >= -0.5) & (my >= -0.5)
-              & (mx <= sw - 0.5) & (my <= sh - 0.5))
+    # 광선 계산은 float64 배열 여러 개를 화소마다 만든다. 구 전체(2400x1200)를 한 번에
+    # 하면 한 장에 수백 MB 라, 여러 장을 동시에 워핑하면 메모리가 작은 PC 에서 엔진이
+    # 꺼졌다. 가로 띠로 나눠 계산하고 결과(float32)만 모은다. 화소별 계산이라 결과는 같다.
+    mx = np.empty((rh, rw), np.float32)
+    my = np.empty((rh, rw), np.float32)
+    inside = np.empty((rh, rw), bool)
+    band = max(1, WARP_BAND_PIXELS // max(1, rw))
+    for y in range(0, rh, band):
+        bh = min(band, rh - y)
+        rays, ok = pano_grid_to_rays(layout.projection, layout.full_w, layout.full_h,
+                                     layout.hfov, layout.center, (rx0, ry0 + y, rw, bh))
+        px, valid = rays_to_pixels(rays, lens, ow, oh, R, lut)
+        bx = (px[..., 0] * sx).astype(np.float32)
+        by = (px[..., 1] * sy).astype(np.float32)
+        mx[y:y + bh], my[y:y + bh] = bx, by
+        inside[y:y + bh] = (ok & valid & (bx >= -0.5) & (by >= -0.5)
+                            & (bx <= sw - 0.5) & (by <= sh - 0.5))
+        del rays, ok, px, valid, bx, by
     if not inside.any():
         return (np.zeros((0, 0, 3), img.dtype), np.zeros((0, 0), np.uint8), (rx0, ry0))
 

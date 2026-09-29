@@ -31,7 +31,7 @@ from .blend import (Patch, apply_field, apply_gains, blend, distance_partition,
                     find_seams, gains_to_ev, match_low_frequency, solve_gains)
 from .camera import ImageParams, Lens
 from .images import build_proxy, imwrite, read_image
-from . import photometric
+from . import photometric, sysmem
 from .project import Project, RenderSettings
 from . import xmp
 from .warp import (PanoLayout, auto_center, compute_layout, fit_fov, warp_image,
@@ -54,7 +54,9 @@ def _env_int(name: str) -> int:
 
 
 def _cache_budget_mb() -> int:
-    return _env_int("MERIDIAN_CACHE_MB") or RENDER_CACHE_BUDGET_MB
+    # 원본 디코딩 캐시는 많을수록 빠르지만, 고정 5GB 는 메모리 4GB 인 PC 에서 엔진을
+    # 통째로 꺼지게 한다. 남은 메모리에 맞춰 줄인다.
+    return _env_int("MERIDIAN_CACHE_MB") or sysmem.budget_mb(RENDER_CACHE_BUDGET_MB)
 
 
 def _worker_count() -> int:
@@ -164,7 +166,7 @@ def render_preview(project: Project, cache_dir: Path, max_dim: int = 1400,
 
     import os
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+    with ThreadPoolExecutor(max_workers=sysmem.workers(80)) as pool:
         futures = [pool.submit(_warp_one, k, i) for k, i in enumerate(ids)]
         for fut in as_completed(futures):
             res = fut.result()
@@ -409,7 +411,8 @@ def render_final(project: Project, out_path: Path, cache_dir: Path,
         raise ValueError("활성화된 이미지가 없습니다")
 
     interp = INTERP.get(s.interpolation, cv2.INTER_CUBIC)
-    workers = _worker_count()
+    # 워커마다 원본 몇 장과 타일 작업 공간을 쥔다. 남은 메모리 안에 드는 만큼만 띄운다.
+    workers = min(_worker_count(), sysmem.workers(_mb_per_image(project) * 2 + 200))
 
     # 원본을 얼마나 미리 줄일지는 사진마다 따로 정한다 (아래 _source_scale).
     src_scales: dict[int, float] = {}
