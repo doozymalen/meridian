@@ -116,6 +116,12 @@ class Engine:
 
 
 def main() -> None:
+    # 윈도우 러너의 콘솔은 cp1252 라 한글을 찍다 죽는다
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     exe = sys.argv[1]
     work = Path(tempfile.mkdtemp(prefix="meridian_시험_"))
     photos = make_photos(work)
