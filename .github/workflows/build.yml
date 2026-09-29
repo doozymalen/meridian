@@ -114,7 +114,11 @@ jobs:
           files: |
             Meridian-windows.zip
             Meridian-mac.zip
+          # 깃허브 화면에서 릴리스를 만들며 설명을 적었으면 그 아래에 덧붙인다 (덮어쓰지 않는다)
+          append_body: true
           body: |
+
+            ---
             ## 내려받기
             - **Windows** (10 1809 이상, x64): `Meridian-windows.zip` — 압축을 풀고 `Meridian.exe` 실행
             - **macOS** (Apple Silicon, 11 이상): `Meridian-mac.zip` — 압축을 풀고 `Meridian.app` 을 응용 프로그램 폴더로
