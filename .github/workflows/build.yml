@@ -79,18 +79,22 @@ jobs:
       - name: 앱 빌드
         run: ./build_app.sh
 
-      - name: 결과 확인과 압축
+      - name: 결과 확인과 DMG 만들기
         run: |
           test -x dist/Meridian.app/Contents/MacOS/Meridian || { echo "앱이 만들어지지 않았습니다"; exit 1; }
-          # 번들 안의 심볼릭 링크와 서명을 지키려면 zip 이 아니라 ditto 로 묶어야 한다
-          ditto -c -k --sequesterRsrc --keepParent dist/Meridian.app Meridian-mac.zip
-          du -sh dist/Meridian.app Meridian-mac.zip
+          # 열면 앱과 '응용 프로그램' 바로가기가 나란히 보여, 끌어다 놓으면 설치가 끝난다.
+          # 번들 안의 심볼릭 링크와 서명을 지키려면 cp 가 아니라 ditto 로 옮겨야 한다.
+          mkdir -p dmg
+          ditto dist/Meridian.app dmg/Meridian.app
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Meridian -srcfolder dmg -ov -format UDZO Meridian-mac.dmg
+          du -sh dist/Meridian.app Meridian-mac.dmg
 
       - name: 내려받을 수 있게 올리기
         uses: actions/upload-artifact@v4
         with:
           name: Meridian-mac
-          path: Meridian-mac.zip
+          path: Meridian-mac.dmg
           retention-days: 14
 
   release:
@@ -106,14 +110,14 @@ jobs:
       - name: 윈도우 판 압축
         run: |
           cd artifacts/Meridian-windows && zip -qr ../../Meridian-windows.zip . && cd ../..
-          cp artifacts/Meridian-mac/Meridian-mac.zip .
-          ls -lh *.zip
+          cp artifacts/Meridian-mac/Meridian-mac.dmg .
+          ls -lh Meridian-windows.zip Meridian-mac.dmg
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             Meridian-windows.zip
-            Meridian-mac.zip
+            Meridian-mac.dmg
           # 깃허브 화면에서 릴리스를 만들며 설명을 적었으면 그 아래에 덧붙인다 (덮어쓰지 않는다)
           append_body: true
           body: |
@@ -121,7 +125,7 @@ jobs:
             ---
             ## 내려받기
             - **Windows** (10 1809 이상, x64): `Meridian-windows.zip` — 압축을 풀고 `Meridian.exe` 실행
-            - **macOS** (Apple Silicon, 11 이상): `Meridian-mac.zip` — 압축을 풀고 `Meridian.app` 을 응용 프로그램 폴더로
+            - **macOS** (Apple Silicon, 11 이상): `Meridian-mac.dmg` — 열고 `Meridian` 을 옆의 응용 프로그램 폴더로 끌어다 놓기
 
             ## 처음 실행할 때
             서명이 없어서 한 번 막힙니다.
