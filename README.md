@@ -85,8 +85,9 @@
 
 ### Windows (10 1809 이상, x64)
 
-`Meridian-windows.zip` 을 풀고 `Meridian.exe` 를 실행한다. 설치가 필요 없고,
-폴더째 옮겨도 그대로 돈다.
+`Meridian-Setup.exe` 를 실행해 설치한다. 관리자 권한은 묻지 않고, 시작 메뉴와
+바탕화면에 Meridian 이 생긴다. 지울 때는 윈도우의 "앱 제거"에서 지운다
+(저장한 프로젝트는 남는다).
 
 > [!NOTE]
 > 서명이 없어서 처음 실행할 때 macOS 와 Windows 가 각각 한 번 막는다.
@@ -180,8 +181,8 @@ open dist/Meridian.app
 
 ### 릴리스
 
-`v*` 태그를 올리면 두 판을 빌드해 릴리스를 만들고 `Meridian-windows.zip`,
-`Meridian-mac.dmg` 를 붙인다. 둘 중 하나라도 실패하면 릴리스는 만들지 않는다.
+`v*` 태그를 올리면 두 판을 빌드해 릴리스를 만들고 `Meridian-Setup.exe`,
+`Meridian-mac.dmg` 를 붙인다. 태그 번호가 설치 프로그램의 버전이 된다. 둘 중 하나라도 실패하면 릴리스는 만들지 않는다.
 
 ```bash
 git checkout main && git pull
