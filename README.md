@@ -81,7 +81,7 @@
 
 ### macOS (Apple Silicon, 11 Big Sur 이상)
 
-`Meridian-mac.zip` 을 풀고 `Meridian.app` 을 응용 프로그램 폴더로 옮긴다.
+`Meridian-mac.dmg` 를 열고 `Meridian` 을 옆의 응용 프로그램 폴더로 끌어다 놓는다.
 
 ### Windows (10 1809 이상, x64)
 
@@ -181,7 +181,7 @@ open dist/Meridian.app
 ### 릴리스
 
 `v*` 태그를 올리면 두 판을 빌드해 릴리스를 만들고 `Meridian-windows.zip`,
-`Meridian-mac.zip` 을 붙인다. 둘 중 하나라도 실패하면 릴리스는 만들지 않는다.
+`Meridian-mac.dmg` 를 붙인다. 둘 중 하나라도 실패하면 릴리스는 만들지 않는다.
 
 ```bash
 git checkout main && git pull
