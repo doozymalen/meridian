@@ -54,11 +54,11 @@ jobs:
           if (-not (Test-Path "publish\Meridian.exe")) { throw "화면 exe 가 만들어지지 않았습니다" }
           # 컴파일된 XAML 이 든 리소스 파일. 빠져도 빌드는 '성공' 하지만, exe 를 누르면
           # 창이 뜨기도 전에 아무 말 없이 꺼진다 (v1.0.0 첫 배포에서 실제로 그랬다).
-          if (-not (Test-Path "publish\Meridian.pri")) {
+          if (-not (Test-Path "publish\resources.pri")) {
             Write-Host "--- 빌드가 만든 리소스 파일들"
             Get-ChildItem -Recurse winui\bin, winui\obj, publish -Include *.pri, *.xbf -ErrorAction SilentlyContinue |
               ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName }
-            throw "Meridian.pri 가 없습니다 — 실행하면 곧바로 꺼집니다"
+            throw "resources.pri 가 없습니다 — 실행하면 곧바로 꺼집니다"
           }
 
       - name: 엔진을 화면 폴더 안으로
