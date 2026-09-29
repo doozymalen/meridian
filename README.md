@@ -215,6 +215,7 @@ MERIDIAN_TRACE=1            # 사진을 물리고 그리는 호출을 따라간�
 MERIDIAN_START_MODE=cp      # 제어점 화면으로 바로 연다
 MERIDIAN_PROJECT=<절대경로>  # 저장해 둔 프로젝트를 열고 시작한다
 MERIDIAN_WORKERS=4          # 내보낼 때 동시에 그릴 타일 수
+MERIDIAN_DATA=<경로>         # 캐시·프로젝트를 둘 곳 (윈도우 기본: %LOCALAPPDATA%\Meridian)
 ```
 
 ## 알아 둘 것
