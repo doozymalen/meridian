@@ -70,7 +70,33 @@ def open_ui(url: str) -> subprocess.Popen | None:
     return None
 
 
+def ensure_std_streams() -> None:
+    """콘솔 없이 뜬 경우 표준 출력을 로그 파일로 돌린다.
+
+    --windowed 로 묶은 exe 를 탐색기에서(또는 콘솔 없는 화면이) 띄우면 sys.stdout /
+    sys.stderr 가 None 이다. uvicorn 은 시작하자마자 sys.stdout.isatty() 를 불러서
+    거기서 죽는다. 버리지 않고 파일로 남겨 두면 문제가 생겼을 때 볼 수 있다.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    log_dir = Path(base) / "Meridian"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stream = open(log_dir / "engine.log", "a", encoding="utf-8", buffering=1)
+    except OSError:
+        stream = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = stream
+    if sys.stderr is None:
+        sys.stderr = stream
+
+
 def main() -> None:
+    # 서버는 문자열("meridian.server:app")이 아니라 객체로 넘긴다. PyInstaller 는
+    # import 문을 따라가며 담을 라이브러리를 고르는데, 문자열로 넘기면 서버 모듈을
+    # 보지 못해 fastapi 같은 것을 통째로 빠뜨린다 (v1.0.0 윈도우 엔진이 그랬다).
+    ensure_std_streams()
     # 네이티브 화면(WinUI)이 띄울 때는 브라우저를 열지 않는다. 화면이 포트를
     # 정해 주고, 자기 프로세스 번호를 넘겨 자신이 죽으면 엔진도 같이 끝나게 한다.
     if os.environ.get("MERIDIAN_ENGINE_ONLY") == "1":
@@ -79,9 +105,9 @@ def main() -> None:
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
         import uvicorn
+        from meridian.server import app
         port = int(os.environ.get("MERIDIAN_PORT") or free_port())
-        uvicorn.run("meridian.server:app", host="127.0.0.1", port=port,
-                    log_level="warning")
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
         return
 
     root = resource_root()
@@ -104,7 +130,8 @@ def main() -> None:
             os._exit(0)
 
     threading.Thread(target=launch, daemon=True).start()
-    uvicorn.run("meridian.server:app", host="127.0.0.1", port=port, log_level="warning")
+    from meridian.server import app
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":

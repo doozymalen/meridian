@@ -87,11 +87,26 @@ jobs:
           # 살아 있어도 오류 창만 보인다. 이름이 같으니 경로로 가린다.
           $engine = Get-Process Meridian -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -like "*\engine\Meridian.exe" }
+          $engineLog = Join-Path $env:LOCALAPPDATA "Meridian\engine.log"
           if (-not $engine) {
+            if (Test-Path $engineLog) { Get-Content $engineLog }
             taskkill /PID $p.Id /T /F | Out-Null
             throw "화면은 켜졌지만 엔진이 떠 있지 않습니다"
           }
-          Write-Host "20초 동안 정상 실행됨 (화면 PID $($p.Id), 엔진 PID $($engine[0].Id))"
+          # 프로세스가 있다고 끝이 아니다. 엔진이 시작하다 죽으면 오류 창을 띄운 채 살아
+          # 있다 (v1.0.0 에서 실제로 그랬다). 엔진이 연 포트로 실제 요청을 보내 본다.
+          $port = (Get-NetTCPConnection -OwningProcess $engine[0].Id -State Listen -ErrorAction SilentlyContinue |
+                   Select-Object -First 1).LocalPort
+          $ok = $false
+          if ($port) {
+            try { $ok = (Invoke-WebRequest "http://127.0.0.1:$port/api/project" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200 } catch { }
+          }
+          if (-not $ok) {
+            if (Test-Path $engineLog) { Get-Content $engineLog }
+            taskkill /PID $p.Id /T /F | Out-Null
+            throw "엔진이 요청에 답하지 않습니다 (포트: $port)"
+          }
+          Write-Host "20초 동안 정상 실행됨 (화면 PID $($p.Id), 엔진 PID $($engine[0].Id), 포트 $port 응답 확인)"
           # 화면과 그 아래 엔진까지 함께 끈다
           taskkill /PID $p.Id /T /F | Out-Null
 
