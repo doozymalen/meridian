@@ -5,7 +5,18 @@ name: 앱 빌드
 on:
   push:
     tags: ["v*"]          # v1.0.0 같은 태그를 올리면 두 판을 만들어 릴리스에 붙인다
-  workflow_dispatch: {}   # 깃허브 화면에서 손으로도 돌릴 수 있다 (릴리스는 안 만든다)
+  # 깃허브 화면(Actions → 앱 빌드 → Run workflow)에서 손으로 돌릴 수 있다.
+  # 버전을 적으면 태그(v<버전>)와 릴리스까지 만든다. 비우면 빌드만 한다.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리스할 버전 (예: 1.0.2). 비우면 빌드만 한다"
+        required: false
+        default: ""
+      notes:
+        description: "릴리스 설명 (다운로드 안내는 아래에 자동으로 붙는다)"
+        required: false
+        default: ""
   pull_request:           # PR 마다 두 판이 빌드되는지 확인한다 (릴리스는 안 만든다)
 
 # 릴리스를 만들고 파일을 붙이려면 쓰기 권한이 있어야 한다.
@@ -114,7 +125,9 @@ jobs:
         shell: pwsh
         run: |
           # 태그(v1.2.3)면 그 번호를, 아니면 0.0.0 을 설치 프로그램 버전으로 쓴다
-          $ver = if ("${{ github.ref }}" -like "refs/tags/v*") { "${{ github.ref_name }}".TrimStart("v") } else { "0.0.0" }
+          $ver = if ("${{ inputs.version }}") { "${{ inputs.version }}".TrimStart("v") }
+                 elseif ("${{ github.ref }}" -like "refs/tags/v*") { "${{ github.ref_name }}".TrimStart("v") }
+                 else { "0.0.0" }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress | Out-Null
@@ -160,8 +173,9 @@ jobs:
           retention-days: 14
 
   release:
-    # 두 판이 모두 성공했을 때만, 태그를 올렸을 때만 릴리스를 만든다
-    if: startsWith(github.ref, 'refs/tags/v')
+    # 두 판이 모두 성공했을 때만 릴리스를 만든다. 태그를 올렸거나, 손으로 돌리며
+    # 버전을 적었을 때. 후자는 태그가 없으므로 지금 커밋에 새로 만든다.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     needs: [windows, mac]
     runs-on: ubuntu-latest
     steps:
@@ -177,12 +191,16 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+          name: ${{ inputs.version && format('Meridian v{0}', inputs.version) || '' }}
+          target_commitish: ${{ github.sha }}
           files: |
             Meridian-Setup.exe
             Meridian-mac.dmg
           # 깃허브 화면에서 릴리스를 만들며 설명을 적었으면 그 아래에 덧붙인다 (덮어쓰지 않는다)
           append_body: true
           body: |
+            ${{ inputs.notes }}
 
             ---
             ## 내려받기
