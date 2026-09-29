@@ -2,8 +2,8 @@
 
 FSPviewer 는 정방형도법(equirectangular) JPEG 을 읽는데, 360x180 을 다 채우지
 못한 사진이면 '전체 구(球) 중 어디를 얼마나 덮고 있는지'를 알아야 제대로
-띄운다. 그 정보를 담는 표준이 구글이 만든 GPano 스키마이고, PTGui 도 같은
-태그를 쓴다. 우리 PanoLayout 은 이미 full_w/full_h(전체 구)와 x0/y0/w/h(잘라
+띄운다. 그 정보를 담는 표준이 구글이 만든 GPano 스키마이고, 파노라마를 다루는
+도구들이 두루 쓴다. 우리 PanoLayout 은 이미 full_w/full_h(전체 구)와 x0/y0/w/h(잘라
 낸 영역)를 들고 있어서 그대로 옮기면 된다.
 
 주의할 점이 하나 있다. 우리 full_w 는 hfov 만큼만 덮는 폭이라 부분 파노라마
@@ -79,7 +79,7 @@ def _esc(v: str) -> str:
 
 
 def build_packet(fields: dict[str, str]) -> bytes:
-    # 속성 형태로 적는다 — GPano 명세가 보여 주는 형태이고 PTGui 도 이렇게 쓴다.
+    # 속성 형태로 적는다 — GPano 명세가 보여 주는 형태다.
     # 태그를 먼저 닫아 버리면 항목이 전부 본문 텍스트가 되어 아무도 못 읽는다.
     body = "\n".join(f'    GPano:{k}="{_esc(v)}"' for k, v in fields.items())
     return _TEMPLATE.format(body=body).encode("utf-8")

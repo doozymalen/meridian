@@ -133,10 +133,10 @@ def compute_layout(images: dict[int, ImageParams], lenses: dict[int, Lens],
 
     fov(가로, 세로 화각 — 도)를 주면 사진이 어디를 덮든 그 화각으로 틀을
     고정한다. 주지 않으면 사진이 덮는 영역에 맞춰 자른다. 고정 틀은 방향을
-    돌려도 크기가 변하지 않는다 — PTGui 의 화각 설정과 같은 뜻이다.
+    돌려도 크기가 변하지 않는다 — 출력 화각을 프로젝트 값으로 못박는 셈이다.
 
     기본 해상도는 '원본 화소 밀도 유지' — 파노라마 중심에서 원본과 1:1 이
-    되도록 잡는다. PTGui 가 최적 크기로 제안하는 값과 같은 기준이다.
+    되도록 잡는다. 원본 화소를 버리지도, 없는 화소를 지어내지도 않는 크기다.
     """
     active = {i: p for i, p in images.items() if i in sizes}
     if not active:
@@ -287,7 +287,7 @@ def fit_fov(images: dict[int, ImageParams], lenses: dict[int, Lens],
     """사진이 전부 들어가는 가장 작은 화각. 틀은 중심 대칭이다.
 
     한쪽으로만 치우친 파노라마면 반대쪽에 빈 곳이 생긴다. 중심을 옮기면
-    방향이 바뀌므로 PTGui 도 이렇게 맞춘다.
+    중심을 옮기면 방향까지 바뀌므로, 화각만 키워 대칭으로 담는다.
     """
     active = {i: p for i, p in images.items() if i in sizes}
     if not active:

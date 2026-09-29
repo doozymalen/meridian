@@ -1,6 +1,6 @@
 """번들 조정 — 제어점으로부터 모든 카메라의 자세와 렌즈를 동시에 푼다.
 
-PTGui 의 '최적화' 탭에 해당하는 부분이다. 잔차는 파노라마 구면 위에서 잰다.
+제어점의 어긋남을 최소로 만드는 번들 조정. 잔차는 파노라마 구면 위에서 잰다.
 
     이미지 i 의 제어점 -> 월드 단위광선 v_i
     이미지 j 의 짝점   -> 월드 단위광선 v_j
@@ -23,7 +23,7 @@ from scipy.sparse import lil_matrix
 
 from .camera import ImageParams, Lens, matrix_to_ypr, pixels_to_rays, rotation_matrix
 
-# 최적화 단계 — PTGui 의 프리셋과 같은 개념
+# 무엇까지 함께 풀지 고르는 단계. 뒤로 갈수록 미지수가 늘어난다.
 MODE_POSITION = "position"            # yaw/pitch/roll 만
 MODE_POSITION_FOV = "position_fov"    # + 화각
 MODE_FULL = "full"                    # + 방사 왜곡
@@ -411,7 +411,7 @@ def point_errors(prob: _Problem) -> np.ndarray:
 def straighten(images: dict[int, ImageParams]) -> dict[int, ImageParams]:
     """수평 맞추기 — 카메라 위쪽 벡터들의 주성분으로 파노라마를 세운다.
 
-    PTGui 의 'Straighten' 과 같은 동작. 삼각대가 수평이 아니었을 때
+    지평선을 수평으로 되돌린다. 삼각대가 수평이 아니었을 때
     지평선이 물결치는 것을 잡아준다.
     """
     rights, downs = [], []

@@ -213,8 +213,8 @@ final class InspectorViewController: NSViewController {
 
     // MARK: 화각
 
-    /// 출력 틀의 가로·세로 화각. PTGui 파노라마 편집기의 아래·왼쪽 슬라이더에
-    /// 해당한다. 숫자로도 넣을 수 있고, '맞춤' 은 사진이 다 들어가게 다시 잰다.
+    /// 출력 틀의 가로·세로 화각. 숫자로도 넣을 수 있고, '맞춤' 은 사진이 다
+    /// 들어가는 가장 작은 화각으로 다시 잰다.
     private func buildFov() {
         for f in [hfovField, vfovField] {
             f.font = UI.monoFont(12)

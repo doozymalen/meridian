@@ -371,8 +371,8 @@ enum OrientDragPhase { case began, changed, ended }
 
 /// 끌어서 파노라마 방향을 돌리는 그림 뷰.
 ///
-/// 왼쪽 끌기는 좌우·상하, 오른쪽 끌기나 ⌥ 끌기는 기울기. PTGui 파노라마 편집기와
-/// 같은 손버릇이다. 기울기는 그림 가운데를 축으로 마우스가 돈 각도를 쓴다.
+/// 왼쪽 끌기는 좌우·상하, 오른쪽 끌기나 ⌥ 끌기는 기울기. 파노라마 편집기에서
+/// 흔히 쓰는 손버릇이다. 기울기는 그림 가운데를 축으로 마우스가 돈 각도를 쓴다.
 final class OrientDragImageView: NSImageView {
     var onDrag: ((OrientDragPhase, NSPoint, Double) -> Void)?
 

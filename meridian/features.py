@@ -1,16 +1,16 @@
 """특징점 검출·매칭 — 자동 제어점 생성.
 
-PTGui 의 알고리즘을 참고하여 세 가지 핵심 전략을 적용했다.
+오매칭을 줄이려고 세 가지를 쓴다.
 
-  1. 자기-모호 특징점 사전 제거 (RemoveSelfAmbiguousFeatures)
+  1. 자기-모호 특징점 사전 제거
      같은 이미지 안에서 디스크립터가 너무 비슷한 점들을 매칭 전에 미리 버린다.
      나뭇잎·벽돌 등 반복 패턴이 만드는 오매칭의 근본 원인을 차단한다.
 
-  2. 양방향 일관성 검증 (Mutual Best Match)
+  2. 양방향 일관성 검증 (상호 최근접)
      A→B 최근접과 B→A 최근접이 서로를 가리킬 때만 유효 매칭으로 받아들인다.
      한쪽만 닮은 허위 매칭을 걸러내 RANSAC 의 부담을 줄인다.
 
-  3. 제어점 서브픽셀 정밀 조정 (MatchFineTuner)
+  3. 제어점 서브픽셀 정밀 조정
      RANSAC 을 통과한 제어점에 대해 원본 프록시의 작은 패치를 잘라 NCC
      (정규화 교차 상관)로 ±수 픽셀 범위를 탐색해 가장 잘 맞는 위치를 찾는다.
      번들 조정의 정밀도가 올라가 이음새가 줄어든다.
@@ -125,7 +125,7 @@ def detect(image: np.ndarray, image_id: int, scale: float,
     desc /= np.maximum(desc.sum(axis=1, keepdims=True), 1e-7)
     desc = np.sqrt(desc)
 
-    # --- PTGui 핵심: 자기-모호 특징점 제거 (RemoveSelfAmbiguousFeatures) ---
+    # 반복 패턴이 만드는 오매칭을 뿌리에서 자른다 (_remove_self_ambiguous 참고)
     if len(desc) > 10:
         pts, desc = _remove_self_ambiguous(pts, desc)
 
@@ -137,7 +137,6 @@ def _remove_self_ambiguous(pts: np.ndarray, desc: np.ndarray,
                            min_dist: float = 30.0) -> tuple[np.ndarray, np.ndarray]:
     """같은 이미지 안에서 너무 비슷한 디스크립터를 가진 점을 제거한다.
 
-    PTGui 는 이걸 'RemoveSelfAmbiguousFeatures' 라고 부른다.
     나뭇잎, 창문, 벽돌 등 반복 패턴의 특징점은 이미지 내부에 자기와
     거의 똑같은 디스크립터가 여러 개 존재한다. 이런 점은 다른 이미지의
     비슷한 반복 패턴과도 쉽게 매칭되어 대량 오매칭의 원인이 된다.
@@ -189,8 +188,7 @@ def candidate_pairs(sets: list[FeatureSet], neighbors: int = 12,
                     max_pairs_per_image: int = 10) -> dict[tuple[int, int], list[tuple[int, int]]]:
     """전역 인덱스로 겹칠 법한 쌍과 그 잠정 매칭을 찾는다.
 
-    PTGui 식 양방향 일관성(Mutual Best Match)을 적용한다.
-    A의 특징점 a 가 B의 b 를 최근접으로 가리키고, B의 b 도 A의 a 를
+    상호 최근접만 받아들인다. A의 특징점 a 가 B의 b 를 최근접으로 가리키고, B의 b 도 A의 a 를
     최근접으로 가리킬 때만 유효 매칭으로 인정한다.
 
     반환: {(a, b): [(a 쪽 특징점 인덱스, b 쪽 인덱스), ...]}  (a < b)
@@ -342,7 +340,7 @@ def fine_tune_points(cps: list[ControlPoint],
                      scales: dict[int, float],
                      patch_radius: int = 16,
                      search_radius: int = 4) -> list[ControlPoint]:
-    """PTGui MatchFineTuner 에 해당: NCC 패치 매칭으로 서브픽셀 정밀도를 올린다.
+    """NCC 패치 매칭으로 제어점의 서브픽셀 정밀도를 올린다.
 
     RANSAC 이 통과시킨 제어점의 좌표를 원본 프록시 패치에서 NCC(정규화
     교차 상관)로 ±search_radius 범위를 탐색해 가장 잘 맞는 위치로 옮긴다.
@@ -433,7 +431,7 @@ def find_control_points(proxies: dict[int, np.ndarray], scales: dict[int, float]
                         progress=None, max_features: int = 5000) -> tuple[list[ControlPoint], dict]:
     """프록시 묶음 -> 제어점 전체. progress(단계, 진행률, 메시지) 로 상황을 알린다.
 
-    PTGui 를 참고한 3단계 파이프라인:
+    3단계 파이프라인:
       1. SIFT 검출 + 자기-모호 특징점 제거
       2. FLANN 전역 매칭 + 양방향 일관성 검증
       3. RANSAC 기하 검증 + NCC 서브픽셀 정밀 조정

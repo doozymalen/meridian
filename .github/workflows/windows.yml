@@ -29,6 +29,11 @@ jobs:
           Get-ChildItem -Recurse dist\Meridian | Measure-Object Length -Sum |
             ForEach-Object { "크기: {0:N0} MB" -f ($_.Sum / 1MB) }
 
+      - name: .NET 8 준비
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
       - name: 네이티브 화면 빌드 (WinUI 3)
         shell: pwsh
         run: |
